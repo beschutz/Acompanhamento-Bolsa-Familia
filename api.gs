@@ -399,6 +399,8 @@ function runHealthCheck() {
   };
 }
 
+const HEALTHCHECK_SAMPLE_BLACKLIST = ["MODELO", "TEMPLATE", "EXEMPLO", "COPIA DE MODELO", "MODELO MAPA"];
+
 // Pega 1 Google Sheets dentro da pasta (sem entrar em subpastas)
 function findSampleSpreadsheetByTipo_(folder, tipo, filtroExclusao) {
   const seen = new Set();
@@ -413,8 +415,8 @@ function findSampleSpreadsheetByTipo_(folder, tipo, filtroExclusao) {
         seen.add(id);
 
         const nameUpper = String(file.getName() || "").toUpperCase();
-        // Pula modelos/arquivos lixo comuns
-        if (nameUpper.includes("MODELO") || nameUpper.includes("TEMPLATE") || nameUpper.includes("EXEMPLO")) continue;
+        // Pula modelos/arquivos lixo comuns (alinhado ao importador)
+        if (HEALTHCHECK_SAMPLE_BLACKLIST.some(termo => nameUpper.includes(termo))) continue;
 
         return { id, name: file.getName() };
       }

@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Painel Mestre Bolsa Família V9.0 (Importação Infinita Fix)
+// @name         Painel Mestre Bolsa Família V9.1 (Painel compacto + health check)
 // @namespace    http://violentmonkey.net/
-// @version      9.0.0
-// @description  Visual V7.8 Mantido + Correção: Botão 'Importar' agora roda em loop até finalizar todas as US.
+// @version      9.1.0
+// @description  Painel de gestão compacto com validação automática e resumo de ciclo.
 // @author       Bernardo (Refinado por IA)
 // @match        file:///*/Acompanha+%20Familia.html
 // @match        https://esus.procempa.com.br/*
