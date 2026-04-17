@@ -80,8 +80,13 @@ function apiPanel(params) {
     if (action === "get_config") {
       return jsonOut({ ok: true, data: JSON.parse(props.getProperty('VIGENCIA_CONFIG') || "null") });
     }
+
+    if (action === "health_check") {
+      return jsonOut({ ok: true, data: runHealthCheck() });
+    }
     
     return jsonOut({ ok: false, err: "Ação desconhecida pelo Painel." });
+
     
   } catch (e) { 
     return jsonOut({ ok: false, err: e.message }); 
@@ -289,6 +294,193 @@ function apiEsus(params) {
     
   } finally { 
     lock.releaseLock(); 
+  }
+}
+
+function runHealthCheck() {
+  const checks = [];
+  const props = PropertiesService.getScriptProperties();
+
+  const push = (id, label, status, message, details) => {
+    checks.push({
+      id, label,
+      status, // "OK" | "ALERTA" | "ERRO"
+      message: message || "",
+      details: details || null,
+      ts: new Date().toISOString()
+    });
+  };
+
+  // 1) Master DB
+  try {
+    const ssMaster = SpreadsheetApp.openById(ID_MASTER_DB_API);
+    const shMaster = ssMaster.getSheetByName(SHEET_MESTRE);
+    if (!shMaster) push("master_sheet", "Master DB (aba DADOS UNIFICADOS)", "ERRO", `Aba "${SHEET_MESTRE}" não encontrada no Master DB.`);
+    else push("master_sheet", "Master DB (aba DADOS UNIFICADOS)", "OK", "Acesso OK.");
+  } catch (e) {
+    push("master_access", "Master DB (acesso)", "ERRO", "Não consegui abrir o Master DB. Verifique permissão/ID.", String(e));
+  }
+
+  // 2) Fila Robôs
+  try {
+    const ssFila = SpreadsheetApp.openById(ID_FILA_ROBOS_API);
+    const shEg = ssFila.getSheetByName(SHEET_EGESTOR);
+    const shEs = ssFila.getSheetByName(SHEET_ESUS);
+
+    if (!shEg) push("fila_egestor", "Fila Robôs (aba E-gestor)", "ERRO", `Aba "${SHEET_EGESTOR}" não encontrada na planilha de Fila.`);
+    else push("fila_egestor", "Fila Robôs (aba E-gestor)", "OK", "Acesso OK.");
+
+    if (!shEs) push("fila_esus", "Fila Robôs (aba E-sus)", "ERRO", `Aba "${SHEET_ESUS}" não encontrada na planilha de Fila.`);
+    else push("fila_esus", "Fila Robôs (aba E-sus)", "OK", "Acesso OK.");
+  } catch (e) {
+    push("fila_access", "Fila Robôs (acesso)", "ERRO", "Não consegui abrir a planilha de Fila. Verifique permissão/ID.", String(e));
+  }
+
+  // 3) Config Vigência
+  let cfg = null;
+  try {
+    cfg = JSON.parse(props.getProperty("VIGENCIA_CONFIG") || "null");
+    if (!cfg) push("cfg_exists", "Configuração de Vigência", "ALERTA", "Nenhuma vigência configurada ainda (VIGENCIA_CONFIG vazio).");
+    else push("cfg_exists", "Configuração de Vigência", "OK", `Vigência ativa: ${cfg.vigencia || "(sem nome)"}`);
+  } catch (e) {
+    push("cfg_parse", "Configuração de Vigência (leitura)", "ERRO", "VIGENCIA_CONFIG está inválido (JSON).", String(e));
+  }
+
+  // 4) Pastas por zona (seguindo a lógica real do seu getPastasConfigAtuais)
+  if (cfg) {
+    const zonas = [
+      { k: "NORTE", tipo: "SUBPASTAS" },
+      { k: "OESTE", tipo: "DIRETA" },
+      { k: "SUL", tipo: "SUBPASTAS_SUL" },
+      { k: "LESTE", tipo: "SUBPASTAS_FILTRADAS", filtroExclusao: "indigenas" },
+    ];
+
+    for (const z of zonas) {
+      const folderId = (cfg[z.k] || "").trim();
+      const labelFolder = `Pasta ${z.k}`;
+
+      if (!folderId) {
+        push(`folder_${z.k}`, labelFolder, "ALERTA", "Não configurada.");
+        continue;
+      }
+
+      // Acesso à pasta
+      let folder = null;
+      try {
+        folder = DriveApp.getFolderById(folderId);
+        push(`folder_${z.k}`, labelFolder, "OK", `OK: ${folder.getName()}`);
+      } catch (e) {
+        push(`folder_${z.k}`, labelFolder, "ERRO", "Não consegui acessar a pasta (ID inválido ou sem permissão).", String(e));
+        continue;
+      }
+
+      // Amostra de planilha (respeitando o tipo)
+      const sample = findSampleSpreadsheetByTipo_(folder, z.tipo, z.filtroExclusao);
+      if (!sample) {
+        push(`sample_${z.k}`, `Amostra ${z.k} (planilha)`, "ALERTA", `Não encontrei nenhuma planilha seguindo a regra do tipo "${z.tipo}".`);
+        continue;
+      }
+
+      push(`sample_${z.k}`, `Amostra ${z.k} (planilha)`, "OK", `Amostra: ${sample.name}`);
+
+      // Abas padrão
+      const resTabs = checkStandardTabsOnSpreadsheet_(sample.id);
+      if (resTabs.ok) {
+        push(`tabs_${z.k}`, `Amostra ${z.k} (abas padrão)`, "OK", `Encontrou: ${resTabs.found.join(", ")}`);
+      } else {
+        push(`tabs_${z.k}`, `Amostra ${z.k} (abas padrão)`, "ALERTA", "Planilha encontrada, mas não achei abas padrão (pode ser arquivo diferente do modelo).", resTabs.details);
+      }
+    }
+  }
+
+  return {
+    ok: checks.every(c => c.status !== "ERRO"),
+    checks
+  };
+}
+
+// Pega 1 Google Sheets dentro da pasta (sem entrar em subpastas)
+function findSampleSpreadsheetByTipo_(folder, tipo, filtroExclusao) {
+  const seen = new Set();
+
+  const pickFirstSheetFile_ = (f) => {
+    try {
+      const it = f.getFilesByType(MimeType.GOOGLE_SHEETS);
+      while (it.hasNext()) {
+        const file = it.next();
+        const id = file.getId();
+        if (seen.has(id)) continue;
+        seen.add(id);
+
+        const nameUpper = String(file.getName() || "").toUpperCase();
+        // Pula modelos/arquivos lixo comuns
+        if (nameUpper.includes("MODELO") || nameUpper.includes("TEMPLATE") || nameUpper.includes("EXEMPLO")) continue;
+
+        return { id, name: file.getName() };
+      }
+    } catch (e) {}
+    return null;
+  };
+
+  const pickFromSubfolders_ = (rootFolder, filterFn) => {
+    try {
+      const subs = rootFolder.getFolders();
+      while (subs.hasNext()) {
+        const sf = subs.next();
+        if (filterFn && !filterFn(sf)) continue;
+
+        const got = pickFirstSheetFile_(sf);
+        if (got) return got;
+      }
+    } catch (e) {}
+    return null;
+  };
+
+  if (tipo === "DIRETA") {
+    return pickFirstSheetFile_(folder);
+  }
+
+  if (tipo === "SUBPASTAS_SUL") {
+    return pickFromSubfolders_(folder);
+  }
+
+  if (tipo === "SUBPASTAS") {
+    return pickFirstSheetFile_(folder) || pickFromSubfolders_(folder);
+  }
+
+  if (tipo === "SUBPASTAS_FILTRADAS") {
+    const filtro = String(filtroExclusao || "").toLowerCase().trim();
+    const filterFn = (sf) => {
+      if (!filtro) return true;
+      return !String(sf.getName() || "").toLowerCase().includes(filtro);
+    };
+    return pickFirstSheetFile_(folder) || pickFromSubfolders_(folder, filterFn);
+  }
+
+  // fallback
+  return pickFirstSheetFile_(folder);
+}
+
+function checkStandardTabsOnSpreadsheet_(spreadsheetId) {
+  const NOMES_ABAS_POSSIVEIS = [
+    "MAPA INDIVIDUALIZADO VIGÊNCIA 1/2026",
+    "MAPA INDIVIDUALIZADO VIGÊNCIA 2026/1",
+    "MAPA POR FAMILIA 1/2026",
+    "MAPA POR FAMILIA 2026/1",
+    "MAPA OFICIAL 2026/1"
+  ];
+
+  try {
+    const ss = SpreadsheetApp.openById(spreadsheetId);
+    const found = [];
+    for (const n of NOMES_ABAS_POSSIVEIS) {
+      if (ss.getSheetByName(n)) found.push(n);
+    }
+    return found.length
+      ? { ok: true, found }
+      : { ok: false, found: [], details: `Nenhuma das abas: ${NOMES_ABAS_POSSIVEIS.join(" | ")}` };
+  } catch (e) {
+    return { ok: false, found: [], details: String(e) };
   }
 }
 
