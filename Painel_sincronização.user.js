@@ -4,7 +4,7 @@
 // @version      9.0.0
 // @description  Visual V7.8 Mantido + Correção: Botão 'Importar' agora roda em loop até finalizar todas as US.
 // @author       Bernardo (Refinado por IA)
-// @match        file:///*
+// @match        file:///*/Acompanha+%20Familia.html
 // @match        https://esus.procempa.com.br/*
 // @match        https://egestoraps.saude.gov.br/*
 // @match        https://acesso-egestoraps.saude.gov.br/*
@@ -546,247 +546,612 @@
         };
     }
 
-    function renderPlanilhas(container) {
-        container.innerHTML = `
-            <div class="animate-fade" style="max-width:860px;margin:0 auto;">
-                <div style="margin-bottom:32px;border-bottom:1px solid rgba(255,255,255,0.05);padding-bottom:20px;">
-                    <h2 style="font-size:26px;font-weight:900;color:white;letter-spacing:-0.5px;font-style:italic;text-transform:uppercase;margin:0;">Gestão Planilhas</h2>
-                    <p style="font-size:12px;color:#475569;margin-top:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Controle de importação e distribuição das Zonas</p>
-                </div>
+function renderPlanilhas(container) {
+  container.innerHTML = `
+    <div class="animate-fade" style="max-width:860px;margin:0 auto;">
+      <div style="margin-bottom:32px;border-bottom:1px solid rgba(255,255,255,0.05);padding-bottom:20px;">
+        <h2 style="font-size:26px;font-weight:900;color:white;letter-spacing:-0.5px;font-style:italic;text-transform:uppercase;margin:0;">Gestão Planilhas</h2>
+        <p style="font-size:12px;color:#475569;margin-top:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Controle de importação e distribuição das Zonas</p>
+      </div>
 
-                <div class="glass-card" style="padding:20px;margin-bottom:16px;">
-                    <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:14px;">Região Alvo</div>
-                    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
-                        ${['TODAS','NORTE','SUL','LESTE','OESTE'].map((r,i)=>`<label style="cursor:pointer;"><input type="radio" name="region_select" value="${r}" class="peer sr-only" ${i===0?'checked':''}><div class="glass-input" style="height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;letter-spacing:0.08em;cursor:pointer;">${r}</div></label>`).join('')}
-                    </div>
-                </div>
+      <div class="glass-card" style="padding:20px;margin-bottom:16px;">
+        <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:14px;">Região Alvo</div>
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
+          ${['TODAS','NORTE','SUL','LESTE','OESTE'].map((r,i)=>`
+            <label style="cursor:pointer;">
+              <input type="radio" name="region_select" value="${r}" class="peer sr-only" ${i===0?'checked':''}>
+              <div class="glass-input" style="height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;letter-spacing:0.08em;cursor:pointer;">
+                ${r}
+              </div>
+            </label>
+          `).join('')}
+        </div>
+      </div>
 
-                <button id="btn-full-sync" class="btn-sync-main" style="width:100%;background:linear-gradient(135deg,rgba(16,185,129,0.12),rgba(16,185,129,0.06));border:1px solid rgba(16,185,129,0.25);border-radius:20px;padding:28px 32px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;overflow:hidden;margin-bottom:16px;">
-                    <div style="display:flex;align-items:center;gap:20px;">
-                        <div style="width:56px;height:56px;background:rgba(16,185,129,0.15);border-radius:16px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(16,185,129,0.2);flex-shrink:0;">
-                            <span class="material-symbols-rounded" style="font-size:32px;color:#10b981;">sync</span>
-                        </div>
-                        <div style="text-align:left;">
-                            <div style="font-size:20px;font-weight:900;color:white;font-style:italic;text-transform:uppercase;letter-spacing:-0.3px;">Executar Ciclo Completo</div>
-                            <div style="font-size:10px;color:#34d399;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;margin-top:4px;">Importar • Atualizar DB • Distribuir • Devolver</div>
-                        </div>
-                    </div>
-                    <span class="material-symbols-rounded" style="font-size:28px;color:rgba(16,185,129,0.4);flex-shrink:0;">chevron_right</span>
-                </button>
-
-                <div id="box-prog" class="hidden glass-card" style="padding:20px;border:1px solid rgba(99,102,241,0.2);background:rgba(99,102,241,0.04);">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-                        <div style="display:flex;align-items:center;gap:6px;">
-                            <div style="width:6px;height:6px;background:#6366f1;border-radius:50%;animation:pulse 2s infinite;"></div>
-                            <span style="font-size:9px;font-weight:800;color:#818cf8;text-transform:uppercase;letter-spacing:0.12em;">Processando...</span>
-                        </div>
-                        <span style="font-weight:900;color:white;font-size:14px;" id="val-prog">0%</span>
-                    </div>
-                    <div class="progress-container"><div id="bar-prog" class="progress-bar"></div></div>
-                </div>
-
-                <div id="log-box" class="glass-card" style="padding:16px 20px;background:rgba(0,0,0,0.55);height:160px;font-family:'Courier New',monospace;font-size:11px;overflow-y:auto;color:#34d399;border:1px solid rgba(16,185,129,0.1);border-radius:16px;">> SISTEMA PRONTO.</div>
-
-                <div style="padding-top:16px;">
-                    <button id="btn-toggle-advanced" style="width:100%;display:flex;align-items:center;justify-content:center;gap:6px;color:#334155;background:none;border:none;cursor:pointer;padding:12px;font-size:9px;font-weight:800;letter-spacing:0.15em;text-transform:uppercase;transition:color 0.2s;">
-                        <span class="material-symbols-rounded" style="font-size:16px;transition:transform 0.2s;">expand_more</span> Opções Manuais Avançadas
-                    </button>
-                    <div id="advanced-panel" class="hidden mt-4 grid grid-cols-4 gap-3 animate-fade">
-                        ${[{a:'run_import',l:'1. Importar',i:'folder_open',c:'#818cf8'},{a:'run_update_db',l:'2. Atualizar DB',i:'update',c:'#60a5fa'},{a:'run_distribute',l:'3. Distribuir',i:'hub',c:'#34d399'},{a:'run_return',l:'4. Devolver',i:'upload_file',c:'#fbbf24'}].map(b =>
-                            `<button data-acao="${b.a}" class="manual-action btn-action-card glass-card" style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px 12px;cursor:pointer;border:1px solid rgba(255,255,255,0.04);">
-                                <div style="width:44px;height:44px;background:${b.c}18;border-radius:12px;display:flex;align-items:center;justify-content:center;border:1px solid ${b.c}30;">
-                                    <span class="material-symbols-rounded" style="font-size:22px;color:${b.c};">${b.i}</span>
-                                </div>
-                                <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.1em;text-align:center;">${b.l}</div>
-                            </button>`
-                        ).join('')}
-                    </div>
-                </div>
+      <!-- ===== CARD COMPACTO: VIGÊNCIA + STATUS + DETALHES RECOLHÍVEIS ===== -->
+      <div class="glass-card" style="padding:16px 18px;margin-bottom:16px;border:1px solid rgba(99,102,241,0.16);background:rgba(99,102,241,0.04);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+          <div style="min-width:0;">
+            <div style="font-size:9px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.14em;">Vigência ativa</div>
+            <div id="vigencia-nome" style="font-size:18px;font-weight:900;color:white;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+              Carregando...
             </div>
-        `;
-        const logBox = document.getElementById('log-box');
-        const log = (m) => { logBox.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${m}</div>`; logBox.scrollTop = logBox.scrollHeight; };
 
-        const regionMeta = {
-            TODAS: { id: 'todas', nome: 'TODAS' },
-            NORTE: { id: 'norte', nome: 'NORTE' },
-            SUL: { id: 'sul', nome: 'SUL' },
-            LESTE: { id: 'leste', nome: 'LESTE' },
-            OESTE: { id: 'oeste', nome: 'OESTE' }
-        };
+            <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap;">
+              <div id="status-pill"
+                style="padding:6px 10px;border-radius:999px;font-size:10px;font-weight:900;letter-spacing:0.12em;text-transform:uppercase;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.02);color:#94a3b8;">
+                verificando…
+              </div>
 
-        function getSelectedRegionMeta() {
-            const selected = document.querySelector('input[name="region_select"]:checked');
-            const key = selected ? selected.value : 'TODAS';
-            return regionMeta[key] || regionMeta.TODAS;
+              <div id="zonas-chips" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+            </div>
+
+            <!-- Linha curta: só aparece se tiver alerta/erro -->
+            <div id="status-msg" style="margin-top:10px;font-size:11px;font-weight:800;color:#64748b;display:none;"></div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:8px;flex-shrink:0;">
+            <button id="btn-status-refresh" class="btn-glass"
+              style="display:flex;align-items:center;gap:6px;padding:10px 12px;font-size:10px;font-weight:900;letter-spacing:0.12em;text-transform:uppercase;border-radius:12px;">
+              <span class="material-symbols-rounded" style="font-size:16px;">refresh</span>
+              Atualizar
+            </button>
+
+            <button id="btn-status-details" class="btn-glass"
+              style="display:flex;align-items:center;gap:6px;padding:10px 12px;font-size:10px;font-weight:900;letter-spacing:0.12em;text-transform:uppercase;border-radius:12px;">
+              <span class="material-symbols-rounded" style="font-size:16px;">expand_more</span>
+              Detalhes
+            </button>
+          </div>
+        </div>
+
+        <div id="status-details" style="display:none;margin-top:14px;border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">
+          <div style="font-size:9px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.14em;margin-bottom:8px;">
+            Diagnóstico (pré‑voo)
+          </div>
+          <div id="health-results" style="font-family:monospace;font-size:11px;line-height:1.6;color:#e2e8f0;"></div>
+        </div>
+      </div>
+
+      <!-- ===== CICLO COMPLETO ===== -->
+      <button id="btn-full-sync" class="btn-sync-main"
+        style="width:100%;background:linear-gradient(135deg,rgba(16,185,129,0.12),rgba(16,185,129,0.06));border:1px solid rgba(16,185,129,0.25);border-radius:20px;padding:28px 32px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;overflow:hidden;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:20px;">
+          <div style="width:56px;height:56px;background:rgba(16,185,129,0.15);border-radius:16px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(16,185,129,0.2);flex-shrink:0;">
+            <span class="material-symbols-rounded" style="font-size:32px;color:#10b981;">sync</span>
+          </div>
+          <div style="text-align:left;">
+            <div style="font-size:20px;font-weight:900;color:white;font-style:italic;text-transform:uppercase;letter-spacing:-0.3px;">Executar Ciclo Completo</div>
+            <div style="font-size:10px;color:#34d399;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;margin-top:4px;">Importar • Atualizar DB • Distribuir • Devolver</div>
+          </div>
+        </div>
+        <span class="material-symbols-rounded" style="font-size:28px;color:rgba(16,185,129,0.4);flex-shrink:0;">chevron_right</span>
+      </button>
+
+      <div id="box-prog" class="hidden glass-card" style="padding:20px;border:1px solid rgba(99,102,241,0.2);background:rgba(99,102,241,0.04);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <div style="width:6px;height:6px;background:#6366f1;border-radius:50%;animation:pulse 2s infinite;"></div>
+            <span style="font-size:9px;font-weight:800;color:#818cf8;text-transform:uppercase;letter-spacing:0.12em;">Processando...</span>
+          </div>
+          <span style="font-weight:900;color:white;font-size:14px;" id="val-prog">0%</span>
+        </div>
+        <div class="progress-container"><div id="bar-prog" class="progress-bar"></div></div>
+      </div>
+<div id="box-summary" class="hidden glass-card"
+  style="padding:16px 18px;border:1px solid rgba(16,185,129,0.18);background:rgba(16,185,129,0.04);margin-top:16px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span class="material-symbols-rounded" style="font-size:18px;color:#34d399;">assignment_turned_in</span>
+      <div style="font-size:10px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.14em;">Resumo do ciclo</div>
+    </div>
+    <div id="summary-time" style="font-size:10px;font-weight:900;color:#a7f3d0;letter-spacing:0.12em;text-transform:uppercase;">--:--</div>
+  </div>
+
+  <div id="summary-lines" style="display:flex;flex-direction:column;gap:8px;font-size:11px;font-weight:800;color:#e2e8f0;"></div>
+
+  <div style="margin-top:10px;font-size:10px;color:#64748b;font-weight:800;">
+    Dica: se algo ficou <span style="color:#fbbf24;">0</span>, confira a vigência/pastas e rode “Atualizar”.
+  </div>
+</div>
+      <div id="log-box" class="glass-card"
+        style="padding:16px 20px;background:rgba(0,0,0,0.55);height:160px;font-family:'Courier New',monospace;font-size:11px;overflow-y:auto;color:#34d399;border:1px solid rgba(16,185,129,0.1);border-radius:16px;">
+        > SISTEMA PRONTO.
+      </div>
+
+      <div style="padding-top:16px;">
+        <button id="btn-toggle-advanced"
+          style="width:100%;display:flex;align-items:center;justify-content:center;gap:6px;color:#334155;background:none;border:none;cursor:pointer;padding:12px;font-size:9px;font-weight:800;letter-spacing:0.15em;text-transform:uppercase;transition:color 0.2s;">
+          <span class="material-symbols-rounded" style="font-size:16px;transition:transform 0.2s;">expand_more</span>
+          Opções Manuais Avançadas
+        </button>
+
+        <div id="advanced-panel" class="hidden mt-4 grid grid-cols-4 gap-3 animate-fade">
+          ${[
+            {a:'run_import',l:'1. Importar',i:'folder_open',c:'#818cf8'},
+            {a:'run_update_db',l:'2. Atualizar DB',i:'update',c:'#60a5fa'},
+            {a:'run_distribute',l:'3. Distribuir',i:'hub',c:'#34d399'},
+            {a:'run_return',l:'4. Devolver',i:'upload_file',c:'#fbbf24'}
+          ].map(b => `
+            <button data-acao="${b.a}" class="manual-action btn-action-card glass-card"
+              style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px 12px;cursor:pointer;border:1px solid rgba(255,255,255,0.04);">
+              <div style="width:44px;height:44px;background:${b.c}18;border-radius:12px;display:flex;align-items:center;justify-content:center;border:1px solid ${b.c}30;">
+                <span class="material-symbols-rounded" style="font-size:22px;color:${b.c};">${b.i}</span>
+              </div>
+              <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.1em;text-align:center;">${b.l}</div>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+
+  const logBox = document.getElementById('log-box');
+  const log = (m) => {
+    logBox.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${m}</div>`;
+    logBox.scrollTop = logBox.scrollHeight;
+  };
+
+  const regionMeta = {
+    TODAS: { id: 'todas', nome: 'TODAS' },
+    NORTE: { id: 'norte', nome: 'NORTE' },
+    SUL:   { id: 'sul',   nome: 'SUL' },
+    LESTE: { id: 'leste', nome: 'LESTE' },
+    OESTE: { id: 'oeste', nome: 'OESTE' }
+  };
+
+  function getSelectedRegionMeta() {
+    const selected = document.querySelector('input[name="region_select"]:checked');
+    const key = selected ? selected.value : 'TODAS';
+    return regionMeta[key] || regionMeta.TODAS;
+  }
+
+  function createExecContext(actionName) {
+    const alvo = getSelectedRegionMeta();
+    const execId = `${actionName}_${alvo.id}_${Date.now()}`;
+    return { alvo, execId };
+  }
+
+  const toggleBtn = document.getElementById('btn-toggle-advanced');
+  const advPanel = document.getElementById('advanced-panel');
+  if (toggleBtn) toggleBtn.onclick = () => {
+    advPanel.classList.toggle('hidden');
+    toggleBtn.querySelector('span').style.transform = advPanel.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(180deg)';
+  };
+
+  async function api(act, context) {
+    const ctx = context || createExecContext(act);
+    const r = ctx.alvo.nome;
+    return new Promise(resolve => {
+      GM_xmlhttpRequest({
+        method: "POST",
+        url: URL_APPS_SCRIPT,
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        data: `action=${act}&api_target=panel&token=${TOKEN_ACESSO}&region=${r}&region_id=${ctx.alvo.id}&exec_id=${ctx.execId}`,
+        onload: (resp) => {
+          try { resolve(JSON.parse(resp.responseText)); }
+          catch { resolve({ ok:false, err:"Resposta inválida do servidor" }); }
         }
+      });
+    });
+  }
+  function safeNum(x) {
+  const n = parseInt(x, 10);
+  return isNaN(n) ? 0 : n;
+}
 
-        function createExecContext(actionName) {
-            const alvo = getSelectedRegionMeta();
-            const execId = `${actionName}_${alvo.id}_${Date.now()}`;
-            return { alvo, execId };
-        }
+function fmtDelta(n) {
+  const sign = n > 0 ? "+" : "";
+  return `${sign}${n}`;
+}
 
-        const toggleBtn = document.getElementById('btn-toggle-advanced');
-        const advPanel = document.getElementById('advanced-panel');
-        if(toggleBtn) toggleBtn.onclick = () => {
-            advPanel.classList.toggle('hidden');
-            toggleBtn.querySelector('span').style.transform = advPanel.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(180deg)';
-        };
+function fmtTime(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const mm = String(Math.floor(s / 60)).padStart(2, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  return `${mm}:${ss}`;
+}
 
-        async function api(act, context) {
-            const ctx = context || createExecContext(act);
-            const r = ctx.alvo.nome;
-            return new Promise(resolve => {
-                GM_xmlhttpRequest({
-                    method: "POST", url: URL_APPS_SCRIPT, headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                    data: `action=${act}&api_target=panel&token=${TOKEN_ACESSO}&region=${r}&region_id=${ctx.alvo.id}&exec_id=${ctx.execId}`,
-                    onload: (resp) => resolve(JSON.parse(resp.responseText))
-                });
-            });
-        }
+async function fetchDashboardSnapshot() {
+  // Usa o mesmo token/URL; action já existe no seu api.gs
+  const res = await new Promise(resolve => {
+    GM_xmlhttpRequest({
+      method: "POST",
+      url: URL_APPS_SCRIPT,
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      data: `action=obter_dashboard&api_target=panel&token=${TOKEN_ACESSO}&force=false`,
+      onload: (resp) => {
+        try { resolve(JSON.parse(resp.responseText)); }
+        catch { resolve({ ok:false }); }
+      }
+    });
+  });
 
-        document.getElementById('btn-full-sync').onclick = async () => {
-            if(!confirm("Iniciar processamento automático?")) return;
+  if(!res || !res.ok || !res.dados) return null;
 
-            // 1. Zera a barra e exibe o painel
-            document.getElementById('box-prog').classList.remove('hidden');
-            const barProg = document.getElementById('bar-prog');
-            const valProg = document.getElementById('val-prog');
-            barProg.style.width = '0%';
-            valProg.innerText = '0%';
+  return {
+    ts: Date.now(),
+    vigencia: res.dados.config?.vigencia || "",
+    fila_egestor: safeNum(res.dados.fila_egestor),
+    fila_esus: safeNum(res.dados.fila_esus),
+    total_buscado: safeNum(res.dados.total_buscado),
+    cadastros_realizados: safeNum(res.dados.cadastros_realizados),
+    egestor_atualizados: safeNum(res.dados.egestor_atualizados),
+    atualizacoes: safeNum(res.dados.atualizacoes),
+    total_db: safeNum(res.dados.total_db),
+    concluidos_db: safeNum(res.dados.concluidos_db),
+  };
+}
 
-            const cicloCtx = createExecContext('full_sync');
-            log(`ALVO: ${cicloCtx.alvo.nome} | ID: ${cicloCtx.execId}`);
-            log("INICIANDO CICLO COMPLETO...");
+function renderCycleSummary(before, after, msTotal) {
+  const box = document.getElementById('box-summary');
+  const lines = document.getElementById('summary-lines');
+  const timeEl = document.getElementById('summary-time');
+  if(!box || !lines || !timeEl) return;
 
-            // --- FUNÇÃO UNIVERSAL PARA A BARRA ---
-            const atualizarBarra = (texto, pctFixa = null) => {
-                if (pctFixa !== null) {
-                    barProg.style.width = pctFixa + '%';
-                    valProg.innerText = pctFixa + '%';
-                    return;
-                }
-                if (!texto) return;
-                const match = String(texto).match(/\[(\d+)\/(\d+)\]/);
-                if (match) {
-                    // Faz a conta se encontrar o [X/Y]
-                    let pct = ((match[1] / match[2]) * 100).toFixed(0);
-                    if (pct > 99) pct = 99; // Evita mostrar 100% antes de terminar
-                    barProg.style.width = pct + '%';
-                    valProg.innerText = pct + '%';
-                }
-            };
+  box.classList.remove('hidden');
+  timeEl.textContent = `TEMPO: ${fmtTime(msTotal)}`;
 
-            // ETAPA 1: IMPORTAÇÃO
-            log("Importando Dados...");
-            let finishedImport = false;
-            while(!finishedImport) {
-                const res = await api('run_import', cicloCtx);
-                if(!res || !res.ok) { log("Erro na importação."); break; }
+  if(!before || !after) {
+    lines.innerHTML = `<div style="color:#fbbf24;">Não foi possível gerar resumo (snapshot ausente).</div>`;
+    return;
+  }
 
-                let textoImp = typeof res.msg === 'object' ? res.msg.msg : res.msg;
-                log(textoImp);
-                atualizarBarra(textoImp); // Tenta ler o [X/Y]
+  const dFilaEg = after.fila_egestor - before.fila_egestor;
+  const dFilaEs = after.fila_esus - before.fila_esus;
 
-                if (typeof res.msg === 'object') {
-                    finishedImport = res.msg.finished;
-                } else {
-                    if (textoImp.includes("Concluíd") || textoImp.includes("finalizad") || textoImp.includes("Nada a")) {
-                        finishedImport = true;
-                    } else if (!textoImp.includes("[")) {
-                        finishedImport = true; // Segurança anti-looping cego
-                    }
-                }
-            }
-            atualizarBarra(null, 30); // Crava em 30% ao terminar importação
+  const dBuscado = after.total_buscado - before.total_buscado;
+  const dCadNovos = after.cadastros_realizados - before.cadastros_realizados;
+  const dCadJa = after.egestor_atualizados - before.egestor_atualizados;
+  const dEsus = after.atualizacoes - before.atualizacoes;
 
-            // ETAPA 2: ATUALIZAR DB
-            log("Sincronizando Banco...");
-            const resDb = await api('run_update_db', cicloCtx);
-            if(resDb && resDb.ok) log(resDb.msg);
-            atualizarBarra(null, 60); // Crava em 60% ao atualizar banco
+  const dConcluidos = after.concluidos_db - before.concluidos_db;
 
-            // ETAPA 3: DISTRIBUIR
-            log("Gerando Filas...");
-            const resDist = await api('run_distribute', cicloCtx);
-            if(resDist && resDist.ok) log(resDist.msg);
-            atualizarBarra(null, 80); // Crava em 80% ao distribuir filas
+  const pill = (txt, color) => `
+    <span style="
+      display:inline-flex;align-items:center;gap:6px;
+      padding:4px 8px;border-radius:999px;
+      border:1px solid ${color}55;background:${color}18;color:${color};
+      font-size:10px;font-weight:900;letter-spacing:0.1em;text-transform:uppercase;">
+      ${txt}
+    </span>
+  `;
 
-            // ETAPA 4: DEVOLUÇÃO
-            log("Devolvendo Dados...");
-            let finishedReturn = false;
-            while(!finishedReturn) {
-                const resRet = await api('run_return', cicloCtx);
-                if(!resRet || !resRet.ok) { log("Erro na devolução."); break; }
+  const row = (title, valueHtml, hint="") => `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+      <div style="color:#94a3b8;font-weight:900;letter-spacing:0.06em;text-transform:uppercase;font-size:10px;">${title}</div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
+        ${valueHtml}
+        ${hint ? `<span style="color:#475569;font-size:10px;font-weight:900;letter-spacing:0.08em;text-transform:uppercase;">${hint}</span>` : ""}
+      </div>
+    </div>
+  `;
 
-                let textoRet = typeof resRet.msg === 'object' ? resRet.msg.msg : resRet.msg;
-                log(textoRet);
-                atualizarBarra(textoRet); // Tenta ler o [X/Y] (que adicionamos na resposta anterior)
+  lines.innerHTML = [
+    row("Vigência", pill(after.vigencia || "—", "#a5b4fc"), before.vigencia && after.vigencia && before.vigencia !== after.vigencia ? `ANTES: ${before.vigencia}` : ""),
+    row("Fila gerada", [
+      pill(`E-GESTOR ${fmtDelta(dFilaEg)}`, dFilaEg >= 0 ? "#34d399" : "#fbbf24"),
+      pill(`E-SUS ${fmtDelta(dFilaEs)}`, dFilaEs >= 0 ? "#60a5fa" : "#fbbf24"),
+    ].join("")),
+    row("Produtividade", [
+      pill(`BUSCAS ${fmtDelta(dBuscado)}`, "#94a3b8"),
+      pill(`NOVOS ${fmtDelta(dCadNovos)}`, "#34d399"),
+      pill(`JÁ CAD. ${fmtDelta(dCadJa)}`, "#059669"),
+      pill(`E-SUS ${fmtDelta(dEsus)}`, "#60a5fa"),
+    ].join("")),
+    row("Concluídos no banco", pill(fmtDelta(dConcluidos), dConcluidos >= 0 ? "#fbbf24" : "#f87171")),
+  ].join("");
+}
 
-                if (textoRet.includes("Concluída") || textoRet.includes("Nada a")) {
-                    finishedReturn = true;
-                }
-            }
+  // ---------- UI compacta ----------
+  function setPill(status, text) {
+    const pill = document.getElementById('status-pill');
+    if (!pill) return;
 
-            // ETAPA 5: FIM
-            atualizarBarra(null, 100); // Fim de papo! 100%
-            log("CONCLUÍDO!");
-            setTimeout(() => document.getElementById('box-prog').classList.add('hidden'), 5000);
-        };
+    const styles = {
+      OK:     { bg: "rgba(16,185,129,0.12)", bd: "rgba(16,185,129,0.35)", fg: "#34d399" },
+      ALERTA: { bg: "rgba(245,158,11,0.10)", bd: "rgba(245,158,11,0.35)", fg: "#fbbf24" },
+      ERRO:   { bg: "rgba(239,68,68,0.10)",  bd: "rgba(239,68,68,0.35)",  fg: "#f87171" },
+      INFO:   { bg: "rgba(148,163,184,0.08)",bd: "rgba(255,255,255,0.08)", fg: "#94a3b8" },
+    };
+    const s = styles[status] || styles.INFO;
 
-        document.querySelectorAll('.manual-action').forEach(btn => {
-            btn.onclick = async function() {
-                const acao = this.dataset.acao;
-                const acaoCtx = createExecContext(acao);
-                log(`ALVO: ${acaoCtx.alvo.nome} | ID: ${acaoCtx.execId}`);
-                if (acao === 'run_import') {
-                     log("INICIANDO IMPORTAÇÃO MANUAL (LOOP)...");
-                     document.getElementById('box-prog').classList.remove('hidden');
-                     let finished = false;
-                     while(!finished) {
-                        const res = await api(acao, acaoCtx);
-                        if(!res || !res.ok) { log("Erro na importação."); break; }
-                        if(typeof res.msg === 'object') {
-                            finished = res.msg.finished;
-                            log(res.msg.msg);
-                            const match = res.msg.msg.match(/\[(\d+)\/(\d+)\]/);
-                            if(match) {
-                                const pct = ((match[1]/match[2])*100).toFixed(0);
-                                document.getElementById('bar-prog').style.width = pct + '%';
-                                document.getElementById('val-prog').innerText = pct + '%';
-                            }
-                        } else {
-                            log(res.msg);
-                            finished = true;
-                        }
-                     }
-                     log("IMPORTAÇÃO FINALIZADA.");
-                     setTimeout(() => document.getElementById('box-prog').classList.add('hidden'), 5000);
-                } else if (acao === 'run_return') {
-                     log("INICIANDO DEVOLUÇÃO MANUAL (LOOP)...");
-                     document.getElementById('box-prog').classList.remove('hidden');
-                     let finishedRet = false;
-                     while(!finishedRet) {
-                        const resRet = await api(acao, acaoCtx);
-                        if(!resRet || !resRet.ok) { log("Erro na devolução."); break; }
-                        log(resRet.msg);
-                        if (resRet.msg === "Devolução Concluída!" || resRet.msg === "Nada a devolver.") {
-                            finishedRet = true;
-                        }
-                     }
-                     log("DEVOLUÇÃO FINALIZADA.");
-                     setTimeout(() => document.getElementById('box-prog').classList.add('hidden'), 5000);
+    pill.style.background = s.bg;
+    pill.style.border = `1px solid ${s.bd}`;
+    pill.style.color = s.fg;
+    pill.textContent = text || status;
+  }
 
-                    } else {
-                    log(`Executando ${acao}...`);
-                    const res = await api(acao, acaoCtx);
-                    if(res.ok) log(`Sucesso: ${res.msg || 'Ação concluída'}`);
-                    else log(`Erro: ${res.err}`);
-                }
-            };
-        });
+  function showStatusMsg(text, kind) {
+    const el = document.getElementById('status-msg');
+    if(!el) return;
+    if(!text) { el.style.display = "none"; return; }
+
+    el.style.display = "block";
+    el.textContent = text;
+
+    if(kind === "ERRO") el.style.color = "#f87171";
+    else if(kind === "ALERTA") el.style.color = "#fbbf24";
+    else el.style.color = "#94a3b8";
+  }
+
+  function renderZonaChips(cfg) {
+    const el = document.getElementById('zonas-chips');
+    if(!el) return;
+    el.innerHTML = "";
+
+    const zonas = [
+      {k:"NORTE", c:"#818cf8"},
+      {k:"SUL",   c:"#10b981"},
+      {k:"LESTE", c:"#f59e0b"},
+      {k:"OESTE", c:"#ef4444"},
+    ];
+
+    zonas.forEach(z => {
+      const ok = cfg && cfg[z.k] && String(cfg[z.k]).trim().length > 0;
+      const chip = document.createElement('div');
+      chip.style.cssText = `
+        padding:6px 10px;border-radius:999px;
+        font-size:10px;font-weight:900;letter-spacing:0.1em;text-transform:uppercase;
+        border:1px solid ${ok ? (z.c+"55") : "rgba(255,255,255,0.08)"};
+        background:${ok ? (z.c+"18") : "rgba(255,255,255,0.02)"};
+        color:${ok ? z.c : "#64748b"};
+      `;
+      chip.textContent = ok ? `${z.k} ✓` : `${z.k} —`;
+      el.appendChild(chip);
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s || "")
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;");
+  }
+
+  function renderHealthDetails(checks, vigName) {
+    const out = document.getElementById('health-results');
+    if(!out) return;
+
+    const order = { "ERRO": 0, "ALERTA": 1, "OK": 2 };
+    const sorted = [...(checks || [])].sort((a,b)=> (order[a.status] ?? 9) - (order[b.status] ?? 9));
+
+    const badge = (st) => {
+      if(st === "OK") return `<span style="color:#34d399;font-weight:900;">[OK]</span>`;
+      if(st === "ALERTA") return `<span style="color:#fbbf24;font-weight:900;">[ALERTA]</span>`;
+      return `<span style="color:#f87171;font-weight:900;">[ERRO]</span>`;
+    };
+
+    const header = `<div style="margin-bottom:10px;color:#a5b4fc;font-weight:900;">Vigência: ${escapeHtml(vigName || "")}</div>`;
+    out.innerHTML = header + sorted.map(c => {
+      const label = escapeHtml(c.label);
+      const msg = escapeHtml(c.message);
+      return `${badge(c.status)} <b>${label}</b> — ${msg}`;
+    }).join("<br>");
+  }
+
+  async function loadConfigAndHealth({silent=false} = {}) {
+    try {
+      setPill("INFO", "verificando…");
+      showStatusMsg("", "INFO");
+
+      // 1) Config
+      const resCfg = await api('get_config', createExecContext('get_config'));
+      const cfg = (resCfg && resCfg.ok) ? (resCfg.data || null) : null;
+
+      const vigEl = document.getElementById('vigencia-nome');
+      const vigName = cfg?.vigencia ? cfg.vigencia : "NÃO CONFIGURADA";
+      if(vigEl) vigEl.textContent = vigName;
+      renderZonaChips(cfg || {});
+
+      // 2) Health check
+      const res = await api('health_check', createExecContext('health_check'));
+      if(!res || !res.ok) {
+        setPill("ERRO", "ERRO");
+        showStatusMsg("Falha ao validar. Verifique token/link do Apps Script.", "ERRO");
+        if(!silent) window.showToast("Validação: erro ao chamar o servidor.");
+        return;
+      }
+
+      const checks = res.data?.checks || [];
+      const hasError = checks.some(c => c.status === "ERRO");
+      const hasWarn  = checks.some(c => c.status === "ALERTA");
+
+      if(hasError) {
+        setPill("ERRO", "ERRO");
+        showStatusMsg("Há erros de configuração. Clique em “Detalhes”.", "ERRO");
+        if(!silent) window.showToast("Validação: ERROS encontrados. Clique em Detalhes.");
+      } else if(hasWarn) {
+        setPill("ALERTA", "ALERTA");
+        showStatusMsg("Operando com alertas (normal se alguma zona estiver vazia).", "ALERTA");
+        if(!silent) window.showToast("Validação: OK com alertas.");
+      } else {
+        setPill("OK", "OK");
+        showStatusMsg("", "OK");
+        if(!silent) window.showToast("Validação: tudo OK.");
+      }
+
+      renderHealthDetails(checks, vigName);
+      log(`VIGÊNCIA ATIVA: ${vigName}`);
+
+    } catch (e) {
+      console.error(e);
+      setPill("ERRO", "ERRO");
+      showStatusMsg("Erro interno no painel. Veja o console (F12).", "ERRO");
+      if(!silent) window.showToast("Erro no painel ao validar. Veja o console (F12).");
     }
+  }
+
+  // Botões do card
+  const btnRefresh = document.getElementById('btn-status-refresh');
+  if(btnRefresh) btnRefresh.onclick = () => loadConfigAndHealth({silent:false});
+
+  const btnDetails = document.getElementById('btn-status-details');
+  if(btnDetails) btnDetails.onclick = () => {
+    const details = document.getElementById('status-details');
+    if(!details) return;
+    const open = details.style.display !== "none";
+    details.style.display = open ? "none" : "block";
+
+    const icon = btnDetails.querySelector('span.material-symbols-rounded');
+    if(icon) icon.textContent = open ? "expand_more" : "expand_less";
+  };
+
+  // Autorun silencioso ao abrir
+  setTimeout(() => loadConfigAndHealth({silent:true}), 300);
+
+  // ===== Ciclo completo (mantido do seu) =====
+  document.getElementById('btn-full-sync').onclick = async () => {
+    if(!confirm("Iniciar processamento automático?")) return;
+
+    document.getElementById('box-prog').classList.remove('hidden');
+    const barProg = document.getElementById('bar-prog');
+    const valProg = document.getElementById('val-prog');
+    barProg.style.width = '0%';
+    valProg.innerText = '0%';
+
+    const cicloCtx = createExecContext('full_sync');
+    log(`ALVO: ${cicloCtx.alvo.nome} | ID: ${cicloCtx.execId}`);
+    log("INICIANDO CICLO COMPLETO...");
+
+    const atualizarBarra = (texto, pctFixa = null) => {
+      if (pctFixa !== null) {
+        barProg.style.width = pctFixa + '%';
+        valProg.innerText = pctFixa + '%';
+        return;
+      }
+      if (!texto) return;
+      const match = String(texto).match(/\[(\d+)\/(\d+)\]/);
+      if (match) {
+        let pct = ((match[1] / match[2]) * 100).toFixed(0);
+        if (pct > 99) pct = 99;
+        barProg.style.width = pct + '%';
+        valProg.innerText = pct + '%';
+      }
+    };
+    const t0 = Date.now();
+document.getElementById('box-summary')?.classList.add('hidden');
+
+log("Capturando snapshot (antes)...");
+const snapBefore = await fetchDashboardSnapshot();
+if(!snapBefore) log("Aviso: não consegui snapshot inicial (resumo pode falhar).");
+
+    // IMPORTAÇÃO
+    log("Importando Dados...");
+    let finishedImport = false;
+    while(!finishedImport) {
+      const res = await api('run_import', cicloCtx);
+      if(!res || !res.ok) { log("Erro na importação."); break; }
+
+      let textoImp = typeof res.msg === 'object' ? res.msg.msg : res.msg;
+      log(textoImp);
+      atualizarBarra(textoImp);
+
+      if (typeof res.msg === 'object') finishedImport = res.msg.finished;
+      else {
+        if (textoImp.includes("Concluíd") || textoImp.includes("finalizad") || textoImp.includes("Nada a")) finishedImport = true;
+        else if (!textoImp.includes("[")) finishedImport = true;
+      }
+    }
+    atualizarBarra(null, 30);
+
+    // ATUALIZAR DB
+    log("Sincronizando Banco...");
+    const resDb = await api('run_update_db', cicloCtx);
+    if(resDb && resDb.ok) log(resDb.msg);
+    atualizarBarra(null, 60);
+
+    // DISTRIBUIR
+    log("Gerando Filas...");
+    const resDist = await api('run_distribute', cicloCtx);
+    if(resDist && resDist.ok) log(resDist.msg);
+    atualizarBarra(null, 80);
+
+    // DEVOLUÇÃO
+    log("Devolvendo Dados...");
+    let finishedReturn = false;
+    while(!finishedReturn) {
+      const resRet = await api('run_return', cicloCtx);
+      if(!resRet || !resRet.ok) { log("Erro na devolução."); break; }
+
+      let textoRet = typeof resRet.msg === 'object' ? resRet.msg.msg : resRet.msg;
+      log(textoRet);
+      atualizarBarra(textoRet);
+
+      if (textoRet.includes("Concluída") || textoRet.includes("Nada a")) finishedReturn = true;
+    }
+
+log("Capturando snapshot (depois)...");
+const snapAfter = await fetchDashboardSnapshot();
+if(!snapAfter) log("Aviso: não consegui snapshot final (resumo pode falhar).");
+
+renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
+
+    atualizarBarra(null, 100);
+    log("CONCLUÍDO!");
+    setTimeout(() => document.getElementById('box-prog').classList.add('hidden'), 5000);
+  };
+
+  // Botões manuais avançados (mantido do seu)
+  document.querySelectorAll('.manual-action').forEach(btn => {
+    btn.onclick = async function() {
+      const acao = this.dataset.acao;
+      const acaoCtx = createExecContext(acao);
+      log(`ALVO: ${acaoCtx.alvo.nome} | ID: ${acaoCtx.execId}`);
+
+      if (acao === 'run_import') {
+        log("INICIANDO IMPORTAÇÃO MANUAL (LOOP)...");
+        document.getElementById('box-prog').classList.remove('hidden');
+
+        let finished = false;
+        while(!finished) {
+          const res = await api(acao, acaoCtx);
+          if(!res || !res.ok) { log("Erro na importação."); break; }
+
+          if(typeof res.msg === 'object') {
+            finished = res.msg.finished;
+            log(res.msg.msg);
+
+            const match = res.msg.msg.match(/\[(\d+)\/(\d+)\]/);
+            if(match) {
+              const pct = ((match[1]/match[2])*100).toFixed(0);
+              document.getElementById('bar-prog').style.width = pct + '%';
+              document.getElementById('val-prog').innerText = pct + '%';
+            }
+          } else {
+            log(res.msg);
+            finished = true;
+          }
+        }
+
+        log("IMPORTAÇÃO FINALIZADA.");
+        setTimeout(() => document.getElementById('box-prog').classList.add('hidden'), 5000);
+
+      } else if (acao === 'run_return') {
+        log("INICIANDO DEVOLUÇÃO MANUAL (LOOP)...");
+        document.getElementById('box-prog').classList.remove('hidden');
+
+        let finishedRet = false;
+        while(!finishedRet) {
+          const resRet = await api(acao, acaoCtx);
+          if(!resRet || !resRet.ok) { log("Erro na devolução."); break; }
+
+          log(resRet.msg);
+          if (resRet.msg === "Devolução Concluída!" || resRet.msg === "Nada a devolver.") finishedRet = true;
+        }
+
+        log("DEVOLUÇÃO FINALIZADA.");
+        setTimeout(() => document.getElementById('box-prog').classList.add('hidden'), 5000);
+
+      } else {
+        log(`Executando ${acao}...`);
+        const res = await api(acao, acaoCtx);
+        if(res.ok) log(`Sucesso: ${res.msg || 'Ação concluída'}`);
+        else log(`Erro: ${res.err}`);
+      }
+    };
+  });
+}
 
     function renderLogin(cEl, tipo) {
         cEl.innerHTML = `
