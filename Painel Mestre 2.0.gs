@@ -264,7 +264,8 @@ function extrairDadosPlanilha(idPlanilha, zona, nomeArquivo) {
     "MAPA INDIVIDUALIZADO VIGÊNCIA 1/2026",
     "MAPA INDIVIDUALIZADO VIGÊNCIA 2026/1",
     "MAPA POR FAMILIA 1/2026",
-    "MAPA POR FAMILIA 2026/1"
+    "MAPA POR FAMILIA 2026/1",
+    "MAPA OFICIAL 2026/1"
   ];
   
   let abasEncontradas = [];
