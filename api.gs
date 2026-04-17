@@ -399,10 +399,11 @@ function runHealthCheck() {
   };
 }
 
+const HEALTHCHECK_SAMPLE_BLACKLIST = ["MODELO", "TEMPLATE", "EXEMPLO", "COPIA DE MODELO", "MODELO MAPA"];
+
 // Pega 1 Google Sheets dentro da pasta (sem entrar em subpastas)
 function findSampleSpreadsheetByTipo_(folder, tipo, filtroExclusao) {
   const seen = new Set();
-  const BLACKLIST_ARQUIVOS = ["MODELO", "TEMPLATE", "EXEMPLO", "COPIA DE MODELO", "MODELO MAPA"];
 
   const pickFirstSheetFile_ = (f) => {
     try {
@@ -415,7 +416,7 @@ function findSampleSpreadsheetByTipo_(folder, tipo, filtroExclusao) {
 
         const nameUpper = String(file.getName() || "").toUpperCase();
         // Pula modelos/arquivos lixo comuns (alinhado ao importador)
-        if (BLACKLIST_ARQUIVOS.some(termo => nameUpper.includes(termo))) continue;
+        if (HEALTHCHECK_SAMPLE_BLACKLIST.some(termo => nameUpper.includes(termo))) continue;
 
         return { id, name: file.getName() };
       }
