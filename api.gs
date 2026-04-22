@@ -13,6 +13,8 @@ const ID_MASTER_DB_API = "154XdEwS8H7f9ll9Dho0F2Wm6fM7G0uM5uQxyarqztyM";
 const SHEET_EGESTOR = "E-gestor";
 const SHEET_ESUS = "E-sus";
 const SHEET_MESTRE = "DADOS UNIFICADOS";
+const COND_AUDIT_RETURN_LIMIT = 20;
+const COND_AUDIT_STORE_LIMIT = 100;
 
 function doGet(e) { return handleRequest(e); }
 function doPost(e) { return handleRequest(e); }
@@ -288,7 +290,9 @@ function apiEsus(params) {
       
       if (statusFinal === "ENCONTRADO COMPLETO") {
         const idade = parseInt(sh.getRange(r, 4).getValue()); 
-        const reqs = calcularRequisitosFinais_({ idade: idade, sexo: "QUALQUER" }, getCondicionalidadesAtivas_(getVigenciaAtiva_()).config).requisitos;
+        const condAtivas = getCondicionalidadesAtivas_(getVigenciaAtiva_());
+        const calcReqs = calcularRequisitosFinais_({ idade: idade, sexo: "QUALQUER" }, condAtivas.config);
+        const reqs = calcReqs.requisitos;
         if (!isNaN(idade) && reqs.vaccinationRequired) {
           const vacinaStr = String(params.vacinacao).toUpperCase().trim();
           if (vacinaStr !== "SIM") {
@@ -506,7 +510,7 @@ function handleGetRules_(params) {
   const audit = parseJsonSafe_(props.getProperty('COND_RULES_AUDIT_LOG'), []);
   const saved = allRules[vigencia];
   const payload = saved ? mergeCondicionalidadesComPadrao_(saved) : getCondicionalidadesPadrao_();
-  const auditVigencia = Array.isArray(audit) ? audit.filter(a => a && a.vigencia === vigencia).slice(-20).reverse() : [];
+  const auditVigencia = Array.isArray(audit) ? audit.filter(a => a && a.vigencia === vigencia).slice(-COND_AUDIT_RETURN_LIMIT).reverse() : [];
 
   return {
     ok: true,
@@ -539,7 +543,10 @@ function handleSaveRules_(params) {
   props.setProperty('COND_RULES_BY_VIGENCIA', JSON.stringify(allRules));
 
   const audit = parseJsonSafe_(props.getProperty('COND_RULES_AUDIT_LOG'), []);
-  const actorFromSession = (Session && Session.getActiveUser) ? Session.getActiveUser().getEmail() : "";
+  let actorFromSession = "";
+  try {
+    actorFromSession = Session.getActiveUser().getEmail() || "";
+  } catch (e) {}
   const actor = String(params.author || actorFromSession || "desconhecido");
   audit.push({
     at: new Date().toISOString(),
@@ -548,7 +555,7 @@ function handleSaveRules_(params) {
     before: before,
     after: sanitized
   });
-  while (audit.length > 100) audit.shift();
+  while (audit.length > COND_AUDIT_STORE_LIMIT) audit.shift();
   props.setProperty('COND_RULES_AUDIT_LOG', JSON.stringify(audit));
 
   return { ok: true, msg: "Condicionalidades salvas com sucesso." };
@@ -602,8 +609,7 @@ function validateCondRulesPayload_(payload) {
 
   const d = payload.defaults;
   const boolFields = ["requirePeso", "requireAltura", "requireDataAcomp", "vaccinationRequired"];
-  for (let i = 0; i < boolFields.length; i++) {
-    const k = boolFields[i];
+  for (const k of boolFields) {
     if (typeof d[k] !== "boolean") return { ok: false, err: `defaults.${k} deve ser booleano.` };
   }
 
@@ -622,8 +628,8 @@ function validateCondRulesPayload_(payload) {
     rules: []
   };
 
-  for (let i = 0; i < payload.rules.length; i++) {
-    const rule = payload.rules[i] || {};
+  for (const [i, rawRule] of payload.rules.entries()) {
+    const rule = rawRule || {};
     const when = rule.when || {};
     const set = rule.set || {};
 
@@ -638,8 +644,7 @@ function validateCondRulesPayload_(payload) {
 
     const setOut = {};
     const setBoolFields = ["requirePeso", "requireAltura", "requireDataAcomp", "vaccinationRequired"];
-    for (let b = 0; b < setBoolFields.length; b++) {
-      const key = setBoolFields[b];
+    for (const key of setBoolFields) {
       if (set[key] === undefined || set[key] === null || set[key] === "") continue;
       if (typeof set[key] !== "boolean") return { ok: false, err: `rules[${i}].set.${key} deve ser booleano.` };
       setOut[key] = set[key];

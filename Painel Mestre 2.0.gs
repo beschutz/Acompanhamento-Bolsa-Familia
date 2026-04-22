@@ -369,11 +369,11 @@ function classificarPaciente(peso, altura, dataAcomp, idade, vacina, acompUS, ac
   
   const simulacao = simularCondicionalidadesInterno_({
     idade: idade,
-    sexo: sexo,
+    sexo: sexo || "QUALQUER",
     pesoPresente: peso !== "" && peso !== "-",
     alturaPresente: altura !== "" && altura !== "-",
     dataAcompPresente: dataAcomp !== "" && dataAcomp !== "-",
-    vacinacaoPresente: Boolean(String(vacina).match(/sim|em dia|ok|s$/i)),
+    vacinacaoPresente: Boolean(String(vacina).match(/^(sim|em dia|ok|s)$/i)),
     acompUS: acompUS,
     acompEgestor: acompEgestor,
     gestante: gestante
@@ -398,11 +398,11 @@ function recalcularPrioridadeMestre(row) {
 
   const simulacao = simularCondicionalidadesInterno_({
     idade: idade,
-    sexo: "",
+    sexo: "QUALQUER",
     pesoPresente: peso !== "" && peso !== "-",
     alturaPresente: altura !== "" && altura !== "-",
     dataAcompPresente: dataAcomp !== "" && dataAcomp !== "-",
-    vacinacaoPresente: Boolean(vacina.match(/sim|em dia|ok|s$/i)),
+    vacinacaoPresente: Boolean(vacina.match(/^(sim|em dia|ok|s)$/i)),
     acompUS: "",
     acompEgestor: "",
     gestante: gestante
@@ -462,10 +462,10 @@ function mergeCondicionalidadesComPadrao_(cfg) {
   const merged = {
     version: parseInt(inCfg.version, 10) || 1,
     defaults: {
-      requirePeso: defaults.requirePeso !== false,
-      requireAltura: defaults.requireAltura !== false,
-      requireDataAcomp: defaults.requireDataAcomp !== false,
-      vaccinationRequired: defaults.vaccinationRequired === true,
+      requirePeso: defaults.requirePeso ?? true,
+      requireAltura: defaults.requireAltura ?? true,
+      requireDataAcomp: defaults.requireDataAcomp ?? true,
+      vaccinationRequired: defaults.vaccinationRequired ?? false,
       vaccinationAgeMax: (defaults.vaccinationAgeMax === "" || defaults.vaccinationAgeMax === null || defaults.vaccinationAgeMax === undefined) ? base.defaults.vaccinationAgeMax : parseInt(defaults.vaccinationAgeMax, 10)
     },
     rules: Array.isArray(inCfg.rules) ? inCfg.rules : []
@@ -488,8 +488,8 @@ function regraCasaComPaciente_(when, input) {
   }
 
   const sexoRegra = String(cond.sexo || "QUALQUER").toUpperCase().trim();
-  if (sexoRegra !== "QUALQUER" && sexoRegra !== "" && sexoPac && sexoPac !== sexoRegra) return false;
-  if (sexoRegra !== "QUALQUER" && sexoRegra !== "" && !sexoPac) return false;
+  const exigeSexoEspecifico = sexoRegra !== "QUALQUER" && sexoRegra !== "";
+  if (exigeSexoEspecifico && (!sexoPac || sexoPac !== sexoRegra)) return false;
 
   return true;
 }
@@ -498,6 +498,7 @@ function calcularRequisitosFinais_(input, cfg) {
   const merged = mergeCondicionalidadesComPadrao_(cfg);
   const req = JSON.parse(JSON.stringify(merged.defaults));
   const appliedRules = [];
+  let hasRuleVaccinationOverride = false;
 
   for (let i = 0; i < merged.rules.length; i++) {
     const rule = merged.rules[i] || {};
@@ -507,7 +508,10 @@ function calcularRequisitosFinais_(input, cfg) {
     if (typeof set.requirePeso === "boolean") req.requirePeso = set.requirePeso;
     if (typeof set.requireAltura === "boolean") req.requireAltura = set.requireAltura;
     if (typeof set.requireDataAcomp === "boolean") req.requireDataAcomp = set.requireDataAcomp;
-    if (typeof set.vaccinationRequired === "boolean") req.vaccinationRequired = set.vaccinationRequired;
+    if (typeof set.vaccinationRequired === "boolean") {
+      req.vaccinationRequired = set.vaccinationRequired;
+      hasRuleVaccinationOverride = true;
+    }
     if (set.vaccinationAgeMax !== undefined && set.vaccinationAgeMax !== null && set.vaccinationAgeMax !== "") {
       const ageMax = parseInt(set.vaccinationAgeMax, 10);
       if (!isNaN(ageMax)) req.vaccinationAgeMax = ageMax;
@@ -520,7 +524,7 @@ function calcularRequisitosFinais_(input, cfg) {
   }
 
   const idadeNum = parseInt(input.idade, 10);
-  if (!isNaN(idadeNum) && req.vaccinationAgeMax !== null && req.vaccinationAgeMax !== undefined && req.vaccinationAgeMax !== "") {
+  if (!hasRuleVaccinationOverride && !isNaN(idadeNum) && req.vaccinationAgeMax !== null && req.vaccinationAgeMax !== undefined && req.vaccinationAgeMax !== "") {
     req.vaccinationRequired = idadeNum <= parseInt(req.vaccinationAgeMax, 10);
   }
 

@@ -562,8 +562,14 @@
             },
             rules: []
         });
+        let ruleSeq = 0;
+        const escapeHtml = (s) => String(s || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
         const newRule = () => ({
-            id: `rule_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            id: `rule_${Date.now()}_${++ruleSeq}`,
             name: "Nova Regra",
             when: { ageMin: null, ageMax: null, sexo: "QUALQUER" },
             set: { requirePeso: true }
@@ -765,7 +771,7 @@
             rulesList.innerHTML = state.rules.map((r, idx) => `
                 <div class="glass-card" style="padding:14px;margin-bottom:10px;border-radius:14px;">
                     <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr auto;gap:8px;align-items:end;">
-                        <div><input data-bind="name" data-idx="${idx}" class="glass-input" value="${String(r.name || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")}" placeholder="Nome da regra"></div>
+                        <div><input data-bind="name" data-idx="${idx}" class="glass-input" value="${escapeHtml(r.name || "")}" placeholder="Nome da regra"></div>
                         <div><input data-bind="ageMin" data-idx="${idx}" type="number" min="0" max="130" class="glass-input" value="${r.when?.ageMin ?? ""}" placeholder="Idade mín"></div>
                         <div><input data-bind="ageMax" data-idx="${idx}" type="number" min="0" max="130" class="glass-input" value="${r.when?.ageMax ?? ""}" placeholder="Idade máx"></div>
                         <div>
