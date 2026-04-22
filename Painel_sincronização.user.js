@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Painel Mestre Bolsa Família V9.1 (Painel compacto + health check)
+// @name         Painel Mestre Bolsa Família V9.2 (Condicionalidades configuráveis)
 // @namespace    http://violentmonkey.net/
-// @version      9.1.0
-// @description  Painel de gestão compacto com validação automática e resumo de ciclo.
+// @version      9.2.0
+// @description  Painel de gestão com condicionalidades configuráveis, validação automática e resumo de ciclo.
 // @author       Bernardo (Refinado por IA)
 // @match        file:///*/Acompanha+%20Familia.html
 // @match        https://esus.procempa.com.br/*
@@ -237,6 +237,7 @@
                         <div id="nav-dashboard" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">dashboard</span> Dashboard</div>
                         <div id="nav-planilhas" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">table_chart</span> Gestão Planilhas</div>
                         <div id="nav-config" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">settings</span> Configuração</div>
+                        <div id="nav-condicionalidades" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">rule_settings</span> Condicionalidades</div>
                         <div style="height:1px;background:rgba(255,255,255,0.04);margin:14px 4px;"></div>
                         <div class="nav-section-label">Sistemas Externos</div>
                         <div id="nav-egestor" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">public</span> e-Gestor Login</div>
@@ -262,6 +263,7 @@
             'dashboard': renderDashboard,
             'planilhas': renderPlanilhas,
             'config': renderConfig,
+            'condicionalidades': renderCondicionalidades,
             'egestor': (c)=>renderLogin(c,'egestor'),
             'esus': (c)=>renderLogin(c,'esus')
         };
@@ -281,6 +283,7 @@
         document.getElementById('nav-dashboard').onclick = () => loadRoute('dashboard');
         document.getElementById('nav-planilhas').onclick = () => loadRoute('planilhas');
         document.getElementById('nav-config').onclick = () => loadRoute('config');
+        document.getElementById('nav-condicionalidades').onclick = () => loadRoute('condicionalidades');
         document.getElementById('nav-egestor').onclick = () => loadRoute('egestor');
         document.getElementById('nav-esus').onclick = () => loadRoute('esus');
 
@@ -544,6 +547,365 @@
             const d = `action=save_config&api_target=panel&token=${TOKEN_ACESSO}&vigencia_nome=${dropdown.value}&folder_norte=${idN}&folder_sul=${idS}&folder_leste=${idL}&folder_oeste=${idO}`;
             GM_xmlhttpRequest({ method: "POST", url: URL_APPS_SCRIPT, headers: { "Content-Type": "application/x-www-form-urlencoded" }, data: d, onload: () => { window.showToast("Configuração Salva!"); this.innerText = "SALVAR PARA TODA A EQUIPE"; CONFIG_ATUAL_SERVIDOR = { vigencia: dropdown.value, NORTE: idN, SUL: idS, LESTE: idL, OESTE: idO }; } });
         };
+    }
+
+    function renderCondicionalidades(container) {
+        const vigencias = ["2026/1", "2026/2", "2027/1", "2027/2", "2028/1", "2028/2"];
+        const baseConfig = () => ({
+            version: 1,
+            defaults: {
+                requirePeso: true,
+                requireAltura: true,
+                requireDataAcomp: true,
+                vaccinationRequired: false,
+                vaccinationAgeMax: 7
+            },
+            rules: []
+        });
+        let ruleSeq = 0;
+        const escapeHtml = (s) => String(s || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+        const newRule = () => ({
+            id: `rule_${Date.now()}_${++ruleSeq}`,
+            name: "Nova Regra",
+            when: { ageMin: null, ageMax: null, sexo: "QUALQUER" },
+            set: { requirePeso: true }
+        });
+        const triToBool = (v) => v === "true" ? true : (v === "false" ? false : null);
+        const boolToTri = (v) => typeof v === "boolean" ? String(v) : "";
+        const numOrNull = (v) => (v === "" || v === null || v === undefined || Number.isNaN(Number(v))) ? null : parseInt(v, 10);
+
+        let state = baseConfig();
+        let auditRows = [];
+        let loaded = false;
+
+        container.innerHTML = `
+            <div class="animate-fade" style="max-width:1100px;margin:0 auto;">
+                <div style="margin-bottom:24px;">
+                    <h1 style="font-size:26px;font-weight:900;color:white;letter-spacing:-0.5px;font-style:italic;text-transform:uppercase;margin:0;">Condicionalidades</h1>
+                    <p style="font-size:12px;color:#475569;margin-top:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Regras por vigência • Última regra aplicada vence</p>
+                </div>
+
+                <div class="glass-card" style="padding:20px;">
+                    <div style="display:grid;grid-template-columns:240px 1fr auto;gap:12px;align-items:end;">
+                        <div>
+                            <label style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.12em;display:block;margin-bottom:6px;">Vigência</label>
+                            <select id="cond-vigencia" class="glass-input" style="cursor:pointer;">
+                                ${vigencias.map(v => `<option value="${v}" style="background:#0d1835">${v}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div id="cond-feedback" style="font-size:11px;font-weight:700;color:#94a3b8;">Carregando condicionalidades...</div>
+                        <div style="display:flex;gap:8px;">
+                            <button id="btn-cond-load" class="btn-glass" style="font-size:10px;font-weight:900;letter-spacing:0.1em;text-transform:uppercase;">Recarregar</button>
+                            <button id="btn-cond-save" style="background:linear-gradient(135deg,#6366f1,#818cf8);border:none;color:white;font-weight:900;padding:12px 16px;border-radius:12px;cursor:pointer;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;">Salvar</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-card" style="padding:20px;">
+                    <div style="font-size:10px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:12px;">Defaults Base</div>
+                    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
+                        <label class="btn-glass" style="display:flex;gap:8px;align-items:center;justify-content:center;"><input type="checkbox" id="d-requirePeso"> Exigir Peso</label>
+                        <label class="btn-glass" style="display:flex;gap:8px;align-items:center;justify-content:center;"><input type="checkbox" id="d-requireAltura"> Exigir Altura</label>
+                        <label class="btn-glass" style="display:flex;gap:8px;align-items:center;justify-content:center;"><input type="checkbox" id="d-requireDataAcomp"> Exigir Data Acomp.</label>
+                        <label class="btn-glass" style="display:flex;gap:8px;align-items:center;justify-content:center;"><input type="checkbox" id="d-vaccinationRequired"> Vacina Obrigatória</label>
+                        <div>
+                            <input id="d-vaccinationAgeMax" type="number" min="0" max="130" class="glass-input" placeholder="Idade máx. vacina">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-card" style="padding:20px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+                        <div style="font-size:10px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.12em;">Regras Ordenadas</div>
+                        <button id="btn-add-rule" class="btn-glass" style="font-size:10px;font-weight:900;letter-spacing:0.1em;text-transform:uppercase;">+ Adicionar Regra</button>
+                    </div>
+                    <div id="rules-list"></div>
+                </div>
+
+                <div class="glass-card" style="padding:20px;">
+                    <div style="font-size:10px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:12px;">Simulador</div>
+                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px;">
+                        <input id="sim-idade" type="number" min="0" max="130" class="glass-input" placeholder="Idade">
+                        <select id="sim-sexo" class="glass-input"><option value="QUALQUER">QUALQUER</option><option value="M">M</option><option value="F">F</option></select>
+                        <label class="btn-glass" style="display:flex;gap:8px;align-items:center;justify-content:center;"><input type="checkbox" id="sim-peso"> Tem Peso</label>
+                        <label class="btn-glass" style="display:flex;gap:8px;align-items:center;justify-content:center;"><input type="checkbox" id="sim-altura"> Tem Altura</label>
+                        <label class="btn-glass" style="display:flex;gap:8px;align-items:center;justify-content:center;"><input type="checkbox" id="sim-data"> Tem Data Acomp.</label>
+                        <label class="btn-glass" style="display:flex;gap:8px;align-items:center;justify-content:center;"><input type="checkbox" id="sim-vacina"> Vacinação OK</label>
+                        <label class="btn-glass" style="display:flex;gap:8px;align-items:center;justify-content:center;"><input type="checkbox" id="sim-acomp-us"> Acomp. US</label>
+                        <label class="btn-glass" style="display:flex;gap:8px;align-items:center;justify-content:center;"><input type="checkbox" id="sim-acomp-eg"> Acomp. E-Gestor</label>
+                        <label class="btn-glass" style="display:flex;gap:8px;align-items:center;justify-content:center;"><input type="checkbox" id="sim-gestante"> Gestante</label>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+                        <button id="btn-simular-cond" class="btn-glass" style="font-size:10px;font-weight:900;letter-spacing:0.1em;text-transform:uppercase;">Simular</button>
+                        <div id="sim-status" style="font-size:11px;font-weight:700;color:#94a3b8;"></div>
+                    </div>
+                    <pre id="sim-output" style="margin:0;background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:12px;min-height:120px;font-size:11px;color:#e2e8f0;overflow:auto;">Aguardando simulação...</pre>
+                </div>
+
+                <div class="glass-card" style="padding:20px;">
+                    <div style="font-size:10px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:12px;">Auditoria (últimas alterações da vigência)</div>
+                    <div id="audit-list" style="font-family:monospace;font-size:11px;color:#cbd5e1;max-height:180px;overflow:auto;">Sem registros.</div>
+                </div>
+            </div>
+        `;
+
+        const vigSelect = document.getElementById('cond-vigencia');
+        const feedback = document.getElementById('cond-feedback');
+        const rulesList = document.getElementById('rules-list');
+        const auditList = document.getElementById('audit-list');
+        const simOutput = document.getElementById('sim-output');
+
+        const requestPanel = (action, extra = {}) => new Promise((resolve) => {
+            const base = { action, api_target: "panel", token: TOKEN_ACESSO };
+            const data = Object.entries({ ...base, ...extra })
+                .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v === undefined || v === null ? "" : String(v))}`)
+                .join("&");
+            GM_xmlhttpRequest({
+                method: "POST",
+                url: URL_APPS_SCRIPT,
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                data,
+                onload: (res) => {
+                    try { resolve(JSON.parse(res.responseText)); }
+                    catch { resolve({ ok: false, err: "Resposta inválida do servidor." }); }
+                },
+                onerror: () => resolve({ ok: false, err: "Falha de rede ao comunicar com a API." })
+            });
+        });
+
+        const getPayload = () => ({
+            version: 1,
+            defaults: {
+                requirePeso: !!state.defaults.requirePeso,
+                requireAltura: !!state.defaults.requireAltura,
+                requireDataAcomp: !!state.defaults.requireDataAcomp,
+                vaccinationRequired: !!state.defaults.vaccinationRequired,
+                vaccinationAgeMax: numOrNull(state.defaults.vaccinationAgeMax) ?? 7
+            },
+            rules: (state.rules || []).map((r, idx) => ({
+                id: r.id || `rule_${idx + 1}`,
+                name: String(r.name || `Regra ${idx + 1}`),
+                when: {
+                    ageMin: numOrNull(r.when?.ageMin),
+                    ageMax: numOrNull(r.when?.ageMax),
+                    sexo: (r.when?.sexo || "QUALQUER").toUpperCase()
+                },
+                set: (() => {
+                    const s = {};
+                    if (typeof r.set?.requirePeso === "boolean") s.requirePeso = r.set.requirePeso;
+                    if (typeof r.set?.requireAltura === "boolean") s.requireAltura = r.set.requireAltura;
+                    if (typeof r.set?.requireDataAcomp === "boolean") s.requireDataAcomp = r.set.requireDataAcomp;
+                    if (typeof r.set?.vaccinationRequired === "boolean") s.vaccinationRequired = r.set.vaccinationRequired;
+                    if (numOrNull(r.set?.vaccinationAgeMax) !== null) s.vaccinationAgeMax = numOrNull(r.set.vaccinationAgeMax);
+                    return s;
+                })()
+            }))
+        });
+
+        const renderAudit = () => {
+            if (!auditRows.length) {
+                auditList.innerText = "Sem registros.";
+                return;
+            }
+            auditList.innerHTML = auditRows.map((a) => {
+                const dt = a.at ? new Date(a.at).toLocaleString() : "-";
+                const beforeCount = a.before?.rules?.length ?? 0;
+                const afterCount = a.after?.rules?.length ?? 0;
+                return `<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.06);">${dt} • ${a.author || "desconhecido"} • regras ${beforeCount} → ${afterCount}</div>`;
+            }).join("");
+        };
+
+        const bindRuleEvents = () => {
+            rulesList.querySelectorAll('[data-bind]').forEach((el) => {
+                el.oninput = () => {
+                    const idx = parseInt(el.getAttribute('data-idx'), 10);
+                    const bind = el.getAttribute('data-bind');
+                    if (!state.rules[idx]) return;
+                    if (bind === "name") state.rules[idx].name = el.value;
+                    if (bind === "ageMin") state.rules[idx].when.ageMin = numOrNull(el.value);
+                    if (bind === "ageMax") state.rules[idx].when.ageMax = numOrNull(el.value);
+                    if (bind === "sexo") state.rules[idx].when.sexo = el.value;
+                    if (bind.startsWith("set.")) {
+                        const k = bind.split(".")[1];
+                        if (k === "vaccinationAgeMax") {
+                            const v = numOrNull(el.value);
+                            if (v === null) delete state.rules[idx].set.vaccinationAgeMax;
+                            else state.rules[idx].set.vaccinationAgeMax = v;
+                        } else {
+                            const v = triToBool(el.value);
+                            if (v === null) delete state.rules[idx].set[k];
+                            else state.rules[idx].set[k] = v;
+                        }
+                    }
+                };
+            });
+
+            rulesList.querySelectorAll('[data-action]').forEach((btn) => {
+                btn.onclick = () => {
+                    const idx = parseInt(btn.getAttribute('data-idx'), 10);
+                    const action = btn.getAttribute('data-action');
+                    if (action === "up" && idx > 0) {
+                        [state.rules[idx - 1], state.rules[idx]] = [state.rules[idx], state.rules[idx - 1]];
+                    }
+                    if (action === "down" && idx < state.rules.length - 1) {
+                        [state.rules[idx + 1], state.rules[idx]] = [state.rules[idx], state.rules[idx + 1]];
+                    }
+                    if (action === "del") {
+                        state.rules.splice(idx, 1);
+                    }
+                    renderRules();
+                };
+            });
+        };
+
+        const renderRules = () => {
+            if (!state.rules.length) {
+                rulesList.innerHTML = `<div style="font-size:11px;color:#64748b;font-weight:700;">Nenhuma regra adicionada. Use “Adicionar Regra”.</div>`;
+                return;
+            }
+
+            rulesList.innerHTML = state.rules.map((r, idx) => `
+                <div class="glass-card" style="padding:14px;margin-bottom:10px;border-radius:14px;">
+                    <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr auto;gap:8px;align-items:end;">
+                        <div><input data-bind="name" data-idx="${idx}" class="glass-input" value="${escapeHtml(r.name || "")}" placeholder="Nome da regra"></div>
+                        <div><input data-bind="ageMin" data-idx="${idx}" type="number" min="0" max="130" class="glass-input" value="${r.when?.ageMin ?? ""}" placeholder="Idade mín"></div>
+                        <div><input data-bind="ageMax" data-idx="${idx}" type="number" min="0" max="130" class="glass-input" value="${r.when?.ageMax ?? ""}" placeholder="Idade máx"></div>
+                        <div>
+                            <select data-bind="sexo" data-idx="${idx}" class="glass-input">
+                                <option value="QUALQUER" ${(r.when?.sexo || "QUALQUER") === "QUALQUER" ? "selected" : ""}>QUALQUER</option>
+                                <option value="M" ${r.when?.sexo === "M" ? "selected" : ""}>M</option>
+                                <option value="F" ${r.when?.sexo === "F" ? "selected" : ""}>F</option>
+                            </select>
+                        </div>
+                        <div style="display:flex;gap:6px;">
+                            <button data-action="up" data-idx="${idx}" class="btn-glass">↑</button>
+                            <button data-action="down" data-idx="${idx}" class="btn-glass">↓</button>
+                            <button data-action="del" data-idx="${idx}" class="btn-glass" style="color:#fca5a5;border-color:rgba(239,68,68,0.35);">✕</button>
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:8px;">
+                        <select data-bind="set.requirePeso" data-idx="${idx}" class="glass-input"><option value="">Peso: Padrão</option><option value="true" ${boolToTri(r.set?.requirePeso) === "true" ? "selected" : ""}>Peso: Obrig.</option><option value="false" ${boolToTri(r.set?.requirePeso) === "false" ? "selected" : ""}>Peso: Disp.</option></select>
+                        <select data-bind="set.requireAltura" data-idx="${idx}" class="glass-input"><option value="">Altura: Padrão</option><option value="true" ${boolToTri(r.set?.requireAltura) === "true" ? "selected" : ""}>Altura: Obrig.</option><option value="false" ${boolToTri(r.set?.requireAltura) === "false" ? "selected" : ""}>Altura: Disp.</option></select>
+                        <select data-bind="set.requireDataAcomp" data-idx="${idx}" class="glass-input"><option value="">Data: Padrão</option><option value="true" ${boolToTri(r.set?.requireDataAcomp) === "true" ? "selected" : ""}>Data: Obrig.</option><option value="false" ${boolToTri(r.set?.requireDataAcomp) === "false" ? "selected" : ""}>Data: Disp.</option></select>
+                        <select data-bind="set.vaccinationRequired" data-idx="${idx}" class="glass-input"><option value="">Vacina: Padrão</option><option value="true" ${boolToTri(r.set?.vaccinationRequired) === "true" ? "selected" : ""}>Vacina: Obrig.</option><option value="false" ${boolToTri(r.set?.vaccinationRequired) === "false" ? "selected" : ""}>Vacina: Disp.</option></select>
+                        <input data-bind="set.vaccinationAgeMax" data-idx="${idx}" type="number" min="0" max="130" class="glass-input" placeholder="Vacina até idade" value="${r.set?.vaccinationAgeMax ?? ""}">
+                    </div>
+                </div>
+            `).join("");
+
+            bindRuleEvents();
+        };
+
+        const applyStateToDefaults = () => {
+            document.getElementById('d-requirePeso').checked = !!state.defaults.requirePeso;
+            document.getElementById('d-requireAltura').checked = !!state.defaults.requireAltura;
+            document.getElementById('d-requireDataAcomp').checked = !!state.defaults.requireDataAcomp;
+            document.getElementById('d-vaccinationRequired').checked = !!state.defaults.vaccinationRequired;
+            document.getElementById('d-vaccinationAgeMax').value = state.defaults.vaccinationAgeMax ?? 7;
+        };
+
+        const loadRules = async () => {
+            feedback.innerText = "Carregando...";
+            const res = await requestPanel("get_rules", { vigencia: vigSelect.value });
+            if (!res || !res.ok) {
+                feedback.innerText = `Erro ao carregar: ${(res && res.err) ? res.err : "falha desconhecida"}`;
+                window.showToast("Erro ao carregar condicionalidades.");
+                return;
+            }
+            state = res.data?.config || baseConfig();
+            auditRows = res.data?.audit || [];
+            if (!Array.isArray(state.rules)) state.rules = [];
+            if (!state.defaults) state.defaults = baseConfig().defaults;
+            applyStateToDefaults();
+            renderRules();
+            renderAudit();
+            feedback.innerText = `Carregado (${res.data?.source || "fallback"})`;
+            loaded = true;
+        };
+
+        document.getElementById('btn-cond-load').onclick = loadRules;
+        document.getElementById('btn-add-rule').onclick = () => { state.rules.push(newRule()); renderRules(); };
+
+        document.getElementById('btn-cond-save').onclick = async () => {
+            const btn = document.getElementById('btn-cond-save');
+            const payload = getPayload();
+            const hasInvalidRule = payload.rules.some(r => !r.set || Object.keys(r.set).length === 0);
+            if (hasInvalidRule) {
+                window.showToast("Cada regra precisa ao menos 1 sobrescrita.");
+                return;
+            }
+            btn.innerText = "Salvando...";
+            btn.disabled = true;
+            feedback.innerText = "Salvando no servidor...";
+            const author = GM_getValue('egestor_user', '') || GM_getValue('esus_user', '') || "";
+            const res = await requestPanel("save_rules", { vigencia: vigSelect.value, author, rules_json: JSON.stringify(payload) });
+            btn.disabled = false;
+            btn.innerText = "Salvar";
+            if (!res || !res.ok) {
+                feedback.innerText = `Erro ao salvar: ${(res && res.err) ? res.err : "falha desconhecida"}`;
+                window.showToast("Falha ao salvar condicionalidades.");
+                return;
+            }
+            feedback.innerText = "Salvo com sucesso.";
+            window.showToast("Condicionalidades salvas!");
+            await loadRules();
+        };
+
+        const bindDefaults = () => {
+            document.getElementById('d-requirePeso').onchange = (e) => state.defaults.requirePeso = e.target.checked;
+            document.getElementById('d-requireAltura').onchange = (e) => state.defaults.requireAltura = e.target.checked;
+            document.getElementById('d-requireDataAcomp').onchange = (e) => state.defaults.requireDataAcomp = e.target.checked;
+            document.getElementById('d-vaccinationRequired').onchange = (e) => state.defaults.vaccinationRequired = e.target.checked;
+            document.getElementById('d-vaccinationAgeMax').oninput = (e) => state.defaults.vaccinationAgeMax = numOrNull(e.target.value) ?? 7;
+        };
+        bindDefaults();
+
+        document.getElementById('btn-simular-cond').onclick = async () => {
+            const idade = document.getElementById('sim-idade').value;
+            const sexo = document.getElementById('sim-sexo').value;
+            const simStatus = document.getElementById('sim-status');
+            simStatus.innerText = "Simulando...";
+            const payload = getPayload();
+            const res = await requestPanel("simulate_rules", {
+                vigencia: vigSelect.value,
+                rules_json: JSON.stringify(payload),
+                idade: idade,
+                sexo: sexo,
+                pesoPresente: document.getElementById('sim-peso').checked,
+                alturaPresente: document.getElementById('sim-altura').checked,
+                dataAcompPresente: document.getElementById('sim-data').checked,
+                vacinacaoPresente: document.getElementById('sim-vacina').checked,
+                acompUS: document.getElementById('sim-acomp-us').checked,
+                acompEgestor: document.getElementById('sim-acomp-eg').checked,
+                gestante: document.getElementById('sim-gestante').checked
+            });
+            if (!res || !res.ok) {
+                simStatus.innerText = "Erro na simulação.";
+                simOutput.textContent = (res && res.err) ? res.err : "Falha desconhecida";
+                window.showToast("Erro ao simular.");
+                return;
+            }
+            const d = res.data || {};
+            simStatus.innerText = `Status: ${d.status || "-"} • Prioridade: ${d.prioridade ?? "-"}`;
+            simOutput.textContent = JSON.stringify({
+                requisitosFinais: d.requisitos || {},
+                status: d.status,
+                prioridade: d.prioridade,
+                faltantes: d.faltantes || [],
+                regrasAplicadas: d.regrasAplicadas || []
+            }, null, 2);
+        };
+
+        vigSelect.onchange = () => {
+            if (loaded) window.showToast(`Mudou para vigência ${vigSelect.value}`, "info");
+            loadRules();
+        };
+
+        loadRules();
     }
 
 function renderPlanilhas(container) {

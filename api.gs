@@ -13,6 +13,8 @@ const ID_MASTER_DB_API = "154XdEwS8H7f9ll9Dho0F2Wm6fM7G0uM5uQxyarqztyM";
 const SHEET_EGESTOR = "E-gestor";
 const SHEET_ESUS = "E-sus";
 const SHEET_MESTRE = "DADOS UNIFICADOS";
+const COND_AUDIT_RETURN_LIMIT = 20;
+const COND_AUDIT_STORE_LIMIT = 100;
 
 function doGet(e) { return handleRequest(e); }
 function doPost(e) { return handleRequest(e); }
@@ -83,6 +85,18 @@ function apiPanel(params) {
 
     if (action === "health_check") {
       return jsonOut({ ok: true, data: runHealthCheck() });
+    }
+
+    if (action === "get_rules") {
+      return jsonOut(handleGetRules_(params));
+    }
+
+    if (action === "save_rules") {
+      return jsonOut(handleSaveRules_(params));
+    }
+
+    if (action === "simulate_rules") {
+      return jsonOut(handleSimulateRules_(params));
     }
     
     return jsonOut({ ok: false, err: "Ação desconhecida pelo Painel." });
@@ -276,7 +290,10 @@ function apiEsus(params) {
       
       if (statusFinal === "ENCONTRADO COMPLETO") {
         const idade = parseInt(sh.getRange(r, 4).getValue()); 
-        if (!isNaN(idade) && idade < 8) {
+        const condAtivas = getCondicionalidadesAtivas_(getVigenciaAtiva_());
+        const calcReqs = calcularRequisitosFinais_({ idade: idade, sexo: "QUALQUER" }, condAtivas.config);
+        const reqs = calcReqs.requisitos;
+        if (!isNaN(idade) && reqs.vaccinationRequired) {
           const vacinaStr = String(params.vacinacao).toUpperCase().trim();
           if (vacinaStr !== "SIM") {
             statusFinal = "DADOS PARCIAIS (FALTA VACINA)"; 
@@ -483,6 +500,189 @@ function checkStandardTabsOnSpreadsheet_(spreadsheetId) {
       : { ok: false, found: [], details: `Nenhuma das abas: ${NOMES_ABAS_POSSIVEIS.join(" | ")}` };
   } catch (e) {
     return { ok: false, found: [], details: String(e) };
+  }
+}
+
+function handleGetRules_(params) {
+  const props = PropertiesService.getScriptProperties();
+  const vigencia = String(params.vigencia || getVigenciaAtiva_() || "DEFAULT").trim();
+  const allRules = parseJsonSafe_(props.getProperty('COND_RULES_BY_VIGENCIA'), {});
+  const audit = parseJsonSafe_(props.getProperty('COND_RULES_AUDIT_LOG'), []);
+  const saved = allRules[vigencia];
+  const payload = saved ? mergeCondicionalidadesComPadrao_(saved) : getCondicionalidadesPadrao_();
+  const auditVigencia = Array.isArray(audit) ? audit.filter(a => a && a.vigencia === vigencia).slice(-COND_AUDIT_RETURN_LIMIT).reverse() : [];
+
+  return {
+    ok: true,
+    data: {
+      vigencia: vigencia,
+      source: saved ? "saved" : "fallback",
+      config: payload,
+      audit: auditVigencia
+    }
+  };
+}
+
+function handleSaveRules_(params) {
+  const props = PropertiesService.getScriptProperties();
+  const vigencia = String(params.vigencia || getVigenciaAtiva_() || "DEFAULT").trim();
+  const rawJson = String(params.rules_json || "").trim();
+  if (!rawJson) return { ok: false, err: "Payload rules_json é obrigatório." };
+
+  const parsed = parseJsonSafe_(rawJson, null);
+  if (!parsed) return { ok: false, err: "rules_json inválido (JSON)." };
+
+  const val = validateCondRulesPayload_(parsed);
+  if (!val.ok) return { ok: false, err: val.err };
+  const sanitized = val.data;
+
+  const allRules = parseJsonSafe_(props.getProperty('COND_RULES_BY_VIGENCIA'), {});
+  const before = allRules[vigencia] ? mergeCondicionalidadesComPadrao_(allRules[vigencia]) : null;
+
+  allRules[vigencia] = sanitized;
+  props.setProperty('COND_RULES_BY_VIGENCIA', JSON.stringify(allRules));
+
+  const audit = parseJsonSafe_(props.getProperty('COND_RULES_AUDIT_LOG'), []);
+  let actorFromSession = "";
+  try {
+    actorFromSession = Session.getActiveUser().getEmail() || "";
+  } catch (e) {}
+  const actor = String(params.author || actorFromSession || "desconhecido");
+  audit.push({
+    at: new Date().toISOString(),
+    vigencia: vigencia,
+    author: actor,
+    before: before,
+    after: sanitized
+  });
+  while (audit.length > COND_AUDIT_STORE_LIMIT) audit.shift();
+  props.setProperty('COND_RULES_AUDIT_LOG', JSON.stringify(audit));
+
+  return { ok: true, msg: "Condicionalidades salvas com sucesso." };
+}
+
+function handleSimulateRules_(params) {
+  const vigencia = String(params.vigencia || getVigenciaAtiva_() || "DEFAULT").trim();
+  let cfg = null;
+  const rawJson = String(params.rules_json || "").trim();
+
+  if (rawJson) {
+    const parsed = parseJsonSafe_(rawJson, null);
+    if (!parsed) return { ok: false, err: "rules_json inválido (JSON)." };
+    const val = validateCondRulesPayload_(parsed);
+    if (!val.ok) return { ok: false, err: val.err };
+    cfg = val.data;
+  } else {
+    cfg = getCondicionalidadesAtivas_(vigencia).config;
+  }
+
+  const input = {
+    idade: parseNullableInt_(params.idade),
+    sexo: String(params.sexo || "QUALQUER").toUpperCase().trim(),
+    pesoPresente: parseBoolParam_(params.pesoPresente),
+    alturaPresente: parseBoolParam_(params.alturaPresente),
+    dataAcompPresente: parseBoolParam_(params.dataAcompPresente),
+    vacinacaoPresente: parseBoolParam_(params.vacinacaoPresente),
+    acompUS: parseBoolParam_(params.acompUS) ? "SIM" : "",
+    acompEgestor: parseBoolParam_(params.acompEgestor) ? "SIM" : "",
+    gestante: parseBoolParam_(params.gestante) ? "SIM" : ""
+  };
+
+  const sim = simularCondicionalidadesInterno_(input, cfg);
+  return {
+    ok: true,
+    data: {
+      vigencia: vigencia,
+      requisitos: sim.requisitos || {},
+      status: sim.status,
+      prioridade: sim.prioridade,
+      faltantes: sim.faltantes || [],
+      regrasAplicadas: sim.appliedRules || []
+    }
+  };
+}
+
+function validateCondRulesPayload_(payload) {
+  if (!payload || typeof payload !== "object") return { ok: false, err: "Payload inválido." };
+  if (!payload.defaults || typeof payload.defaults !== "object") return { ok: false, err: "Campo defaults é obrigatório." };
+  if (!Array.isArray(payload.rules)) return { ok: false, err: "Campo rules deve ser lista." };
+
+  const d = payload.defaults;
+  const boolFields = ["requirePeso", "requireAltura", "requireDataAcomp", "vaccinationRequired"];
+  for (const k of boolFields) {
+    if (typeof d[k] !== "boolean") return { ok: false, err: `defaults.${k} deve ser booleano.` };
+  }
+
+  const vaxAge = parseNullableInt_(d.vaccinationAgeMax);
+  if (vaxAge === null || vaxAge < 0 || vaxAge > 130) return { ok: false, err: "defaults.vaccinationAgeMax deve estar entre 0 e 130." };
+
+  const out = {
+    version: parseInt(payload.version, 10) || 1,
+    defaults: {
+      requirePeso: d.requirePeso,
+      requireAltura: d.requireAltura,
+      requireDataAcomp: d.requireDataAcomp,
+      vaccinationRequired: d.vaccinationRequired,
+      vaccinationAgeMax: vaxAge
+    },
+    rules: []
+  };
+
+  for (const [i, rawRule] of payload.rules.entries()) {
+    const rule = rawRule || {};
+    const when = rule.when || {};
+    const set = rule.set || {};
+
+    const ageMin = parseNullableInt_(when.ageMin);
+    const ageMax = parseNullableInt_(when.ageMax);
+    if (ageMin !== null && (ageMin < 0 || ageMin > 130)) return { ok: false, err: `rules[${i}].when.ageMin fora do range (0-130).` };
+    if (ageMax !== null && (ageMax < 0 || ageMax > 130)) return { ok: false, err: `rules[${i}].when.ageMax fora do range (0-130).` };
+    if (ageMin !== null && ageMax !== null && ageMin > ageMax) return { ok: false, err: `rules[${i}] idade mínima maior que máxima.` };
+
+    const sexo = String(when.sexo || "QUALQUER").toUpperCase().trim();
+    if (["M", "F", "QUALQUER"].indexOf(sexo) === -1) return { ok: false, err: `rules[${i}].when.sexo inválido.` };
+
+    const setOut = {};
+    const setBoolFields = ["requirePeso", "requireAltura", "requireDataAcomp", "vaccinationRequired"];
+    for (const key of setBoolFields) {
+      if (set[key] === undefined || set[key] === null || set[key] === "") continue;
+      if (typeof set[key] !== "boolean") return { ok: false, err: `rules[${i}].set.${key} deve ser booleano.` };
+      setOut[key] = set[key];
+    }
+    if (set.vaccinationAgeMax !== undefined && set.vaccinationAgeMax !== null && set.vaccinationAgeMax !== "") {
+      const sAge = parseNullableInt_(set.vaccinationAgeMax);
+      if (sAge === null || sAge < 0 || sAge > 130) return { ok: false, err: `rules[${i}].set.vaccinationAgeMax fora do range (0-130).` };
+      setOut.vaccinationAgeMax = sAge;
+    }
+
+    if (Object.keys(setOut).length === 0) return { ok: false, err: `rules[${i}] deve ter ao menos 1 sobrescrita em set.` };
+
+    out.rules.push({
+      id: String(rule.id || `rule_${i + 1}`),
+      name: String(rule.name || `Regra ${i + 1}`),
+      when: { ageMin: ageMin, ageMax: ageMax, sexo: sexo },
+      set: setOut
+    });
+  }
+
+  return { ok: true, data: out };
+}
+
+function parseBoolParam_(v) {
+  return String(v).toLowerCase() === "true" || String(v) === "1";
+}
+
+function parseNullableInt_(v) {
+  if (v === undefined || v === null || v === "") return null;
+  const n = parseInt(v, 10);
+  return isNaN(n) ? null : n;
+}
+
+function parseJsonSafe_(raw, fallback) {
+  try {
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (e) {
+    return fallback;
   }
 }
 

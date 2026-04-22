@@ -26,6 +26,14 @@ const STATUS = {
   IGNORADO: "Ignorado (Óbito/Fora de Área)"
 };
 
+const CONDICIONALIDADES_DEFAULTS_SAFE = {
+  requirePeso: true,
+  requireAltura: true,
+  requireDataAcomp: true,
+  vaccinationRequired: false,
+  vaccinationAgeMax: 7
+};
+
 
 // =================================================================================
 // 2. VIGÊNCIA DINÂMICA (PASTAS)
@@ -355,38 +363,27 @@ function extrairDadosPlanilha(idPlanilha, zona, nomeArquivo) {
 }
 
 // LÓGICA DE PRIORIDADES (ATUALIZADA)
-function classificarPaciente(peso, altura, dataAcomp, idade, vacina, acompUS, acompEgestor, gestante) {
+function classificarPaciente(peso, altura, dataAcomp, idade, vacina, acompUS, acompEgestor, gestante, sexo) {
   // 0. Prioridade Máxima: Já acompanhado no e-Gestor
   if (acompEgestor === "SIM") return { status: STATUS.CONCLUIDO, prioridade: 0 };
   
-  let temPeso = peso !== "" && peso !== "-";
-  let temAltura = altura !== "" && altura !== "-";
-  let temDataAcomp = dataAcomp !== "" && dataAcomp !== "-";
-  let idadeNum = parseInt(idade) || 99;
-  let vacinaNecessaria = (idadeNum < 8);
-  let vacinaOk = String(vacina).match(/sim|em dia|ok|s$/i);
-  
-  // 1. Tem Peso, Altura E Data de Acompanhamento preenchidos
-  if (temPeso && temAltura && temDataAcomp) {
-    if (vacinaNecessaria && !vacinaOk) {
-      // É criança, tem peso/altura/data, mas falta a vacina (1 info faltando = Prioridade 2)
-      return { status: STATUS.INCOMPLETO, prioridade: 2 };
-    }
-    // Tudo completo = Prioridade 1 (Vai pro e-Gestor)
-    return { status: STATUS.PRONTO_EGESTOR, prioridade: 1 };
-  }
-  
-  // 2. Falta APENAS Peso, Altura OU Data (Se tiver pelo menos Peso ou Altura, vai pro E-SUS tentar preencher)
-  if (temPeso || temAltura) {
-    return { status: STATUS.INCOMPLETO, prioridade: 2 };
+  const simulacao = simularCondicionalidadesInterno_({
+    idade: idade,
+    sexo: sexo || "QUALQUER",
+    pesoPresente: peso !== "" && peso !== "-",
+    alturaPresente: altura !== "" && altura !== "-",
+    dataAcompPresente: dataAcomp !== "" && dataAcomp !== "-",
+    vacinacaoPresente: Boolean(String(vacina).match(/^(sim|em dia|ok|s)$/i)),
+    acompUS: acompUS,
+    acompEgestor: acompEgestor,
+    gestante: gestante
+  });
+
+  if (simulacao && simulacao.status && simulacao.prioridade !== undefined) {
+    return { status: simulacao.status, prioridade: simulacao.prioridade };
   }
 
-  // 3. Falta AMBOS os dados biológicos (Peso e Altura estão em branco), mas tem indicativo de acompanhamento
-  if (acompUS === "SIM" || gestante === "SIM" || temDataAcomp) {
-    return { status: STATUS.ACOMP_SEM_DADOS, prioridade: 3 }; 
-  }
-
-  // 4. Sem acompanhamento nenhum, sem dados biológicos (Fim da fila = Prioridade 4)
+  // Fallback seguro em caso de erro inesperado
   return { status: STATUS.NAO_ACOMP, prioridade: 4 };
 }
 
@@ -399,20 +396,190 @@ function recalcularPrioridadeMestre(row) {
   let altura = String(row[9]).trim();
   let gestante = String(row[10]).trim();
 
-  let temPeso = peso !== "" && peso !== "-";
-  let temAltura = altura !== "" && altura !== "-";
-  let temDataAcomp = dataAcomp !== "" && dataAcomp !== "-";
-  let idadeNum = parseInt(idade) || 99;
-  let vacinaNecessaria = (idadeNum < 8);
-  let vacinaOk = vacina.match(/sim|em dia|ok|s$/i);
+  const simulacao = simularCondicionalidadesInterno_({
+    idade: idade,
+    sexo: "QUALQUER",
+    pesoPresente: peso !== "" && peso !== "-",
+    alturaPresente: altura !== "" && altura !== "-",
+    dataAcompPresente: dataAcomp !== "" && dataAcomp !== "-",
+    vacinacaoPresente: Boolean(vacina.match(/^(sim|em dia|ok|s)$/i)),
+    acompUS: "",
+    acompEgestor: "",
+    gestante: gestante
+  });
 
-  if (temPeso && temAltura && temDataAcomp) {
-    if (vacinaNecessaria && !vacinaOk) return { prioridade: 2, status: STATUS.INCOMPLETO };
-    return { prioridade: 1, status: STATUS.PRONTO_EGESTOR };
+  if (simulacao && simulacao.status && simulacao.prioridade !== undefined) {
+    return { prioridade: simulacao.prioridade, status: simulacao.status };
   }
-  if (temPeso || temAltura) return { prioridade: 2, status: STATUS.INCOMPLETO };
-  if (temDataAcomp || gestante === "SIM") return { prioridade: 3, status: STATUS.ACOMP_SEM_DADOS };
   return { prioridade: 4, status: STATUS.NAO_ACOMP };
+}
+
+function getVigenciaAtiva_() {
+  try {
+    const cfg = JSON.parse(PropertiesService.getScriptProperties().getProperty('VIGENCIA_CONFIG') || "{}");
+    return String(cfg.vigencia || "").trim();
+  } catch (e) {
+    return "";
+  }
+}
+
+function getCondicionalidadesPadrao_() {
+  return JSON.parse(JSON.stringify({
+    version: 1,
+    defaults: CONDICIONALIDADES_DEFAULTS_SAFE,
+    rules: []
+  }));
+}
+
+function getCondicionalidadesAtivas_(vigencia) {
+  const props = PropertiesService.getScriptProperties();
+  const key = 'COND_RULES_BY_VIGENCIA';
+  const vig = String(vigencia || getVigenciaAtiva_() || "DEFAULT").trim();
+
+  try {
+    const all = JSON.parse(props.getProperty(key) || "{}");
+    const saved = all[vig];
+    if (saved && saved.defaults) {
+      return {
+        vigencia: vig,
+        config: mergeCondicionalidadesComPadrao_(saved),
+        source: "saved"
+      };
+    }
+  } catch (e) {}
+
+  return {
+    vigencia: vig,
+    config: getCondicionalidadesPadrao_(),
+    source: "fallback"
+  };
+}
+
+function mergeCondicionalidadesComPadrao_(cfg) {
+  const base = getCondicionalidadesPadrao_();
+  const inCfg = cfg || {};
+  const defaults = inCfg.defaults || {};
+  const merged = {
+    version: parseInt(inCfg.version, 10) || 1,
+    defaults: {
+      requirePeso: defaults.requirePeso ?? true,
+      requireAltura: defaults.requireAltura ?? true,
+      requireDataAcomp: defaults.requireDataAcomp ?? true,
+      vaccinationRequired: defaults.vaccinationRequired ?? false,
+      vaccinationAgeMax: (defaults.vaccinationAgeMax === "" || defaults.vaccinationAgeMax === null || defaults.vaccinationAgeMax === undefined) ? base.defaults.vaccinationAgeMax : parseInt(defaults.vaccinationAgeMax, 10)
+    },
+    rules: Array.isArray(inCfg.rules) ? inCfg.rules : []
+  };
+
+  if (isNaN(merged.defaults.vaccinationAgeMax)) merged.defaults.vaccinationAgeMax = base.defaults.vaccinationAgeMax;
+  return merged;
+}
+
+function regraCasaComPaciente_(when, input) {
+  const cond = when || {};
+  const idadeNum = parseInt(input.idade, 10);
+  const sexoPac = String(input.sexo || "").toUpperCase().trim();
+
+  if (cond.ageMin !== undefined && cond.ageMin !== null && cond.ageMin !== "") {
+    if (isNaN(idadeNum) || idadeNum < parseInt(cond.ageMin, 10)) return false;
+  }
+  if (cond.ageMax !== undefined && cond.ageMax !== null && cond.ageMax !== "") {
+    if (isNaN(idadeNum) || idadeNum > parseInt(cond.ageMax, 10)) return false;
+  }
+
+  const sexoRegra = String(cond.sexo || "QUALQUER").toUpperCase().trim();
+  const exigeSexoEspecifico = sexoRegra !== "QUALQUER" && sexoRegra !== "";
+  if (exigeSexoEspecifico && (!sexoPac || sexoPac !== sexoRegra)) return false;
+
+  return true;
+}
+
+function calcularRequisitosFinais_(input, cfg) {
+  const merged = mergeCondicionalidadesComPadrao_(cfg);
+  const req = JSON.parse(JSON.stringify(merged.defaults));
+  const appliedRules = [];
+  let hasRuleVaccinationOverride = false;
+
+  for (let i = 0; i < merged.rules.length; i++) {
+    const rule = merged.rules[i] || {};
+    if (!regraCasaComPaciente_(rule.when, input)) continue;
+    const set = rule.set || {};
+
+    if (typeof set.requirePeso === "boolean") req.requirePeso = set.requirePeso;
+    if (typeof set.requireAltura === "boolean") req.requireAltura = set.requireAltura;
+    if (typeof set.requireDataAcomp === "boolean") req.requireDataAcomp = set.requireDataAcomp;
+    if (typeof set.vaccinationRequired === "boolean") {
+      req.vaccinationRequired = set.vaccinationRequired;
+      hasRuleVaccinationOverride = true;
+    }
+    if (set.vaccinationAgeMax !== undefined && set.vaccinationAgeMax !== null && set.vaccinationAgeMax !== "") {
+      const ageMax = parseInt(set.vaccinationAgeMax, 10);
+      if (!isNaN(ageMax)) req.vaccinationAgeMax = ageMax;
+    }
+
+    appliedRules.push({
+      index: i,
+      name: rule.name || `Regra ${i + 1}`
+    });
+  }
+
+  const idadeNum = parseInt(input.idade, 10);
+  if (!hasRuleVaccinationOverride && !isNaN(idadeNum) && req.vaccinationAgeMax !== null && req.vaccinationAgeMax !== undefined && req.vaccinationAgeMax !== "") {
+    req.vaccinationRequired = idadeNum <= parseInt(req.vaccinationAgeMax, 10);
+  }
+
+  return { requisitos: req, appliedRules: appliedRules };
+}
+
+function simularCondicionalidadesInterno_(input, cfg) {
+  const inData = input || {};
+  const acompEgestor = String(inData.acompEgestor || "").toUpperCase().trim();
+  if (acompEgestor === "SIM") {
+    return {
+      status: STATUS.CONCLUIDO,
+      prioridade: 0,
+      faltantes: [],
+      appliedRules: []
+    };
+  }
+
+  const conf = cfg || getCondicionalidadesAtivas_(getVigenciaAtiva_()).config;
+  const calc = calcularRequisitosFinais_(inData, conf);
+  const req = calc.requisitos;
+
+  const temPeso = inData.pesoPresente === true;
+  const temAltura = inData.alturaPresente === true;
+  const temDataAcomp = inData.dataAcompPresente === true;
+  const temVacina = inData.vacinacaoPresente === true;
+  const acompUS = String(inData.acompUS || "").toUpperCase().trim();
+  const gestante = String(inData.gestante || "").toUpperCase().trim();
+
+  const faltantes = [];
+  if (req.requirePeso && !temPeso) faltantes.push("peso");
+  if (req.requireAltura && !temAltura) faltantes.push("altura");
+  if (req.requireDataAcomp && !temDataAcomp) faltantes.push("dataAcomp");
+  if (req.vaccinationRequired && !temVacina) faltantes.push("vacinacao");
+
+  const blocosObrigatoriosOk = (!req.requirePeso || temPeso) && (!req.requireAltura || temAltura) && (!req.requireDataAcomp || temDataAcomp);
+  const vacinacaoOk = (!req.vaccinationRequired || temVacina);
+  const temBiometriaParcial = temPeso || temAltura;
+
+  if (blocosObrigatoriosOk) {
+    if (!vacinacaoOk) {
+      return { status: STATUS.INCOMPLETO, prioridade: 2, faltantes: faltantes, requisitos: req, appliedRules: calc.appliedRules };
+    }
+    return { status: STATUS.PRONTO_EGESTOR, prioridade: 1, faltantes: [], requisitos: req, appliedRules: calc.appliedRules };
+  }
+
+  if (temBiometriaParcial) {
+    return { status: STATUS.INCOMPLETO, prioridade: 2, faltantes: faltantes, requisitos: req, appliedRules: calc.appliedRules };
+  }
+
+  if (acompUS === "SIM" || gestante === "SIM" || temDataAcomp) {
+    return { status: STATUS.ACOMP_SEM_DADOS, prioridade: 3, faltantes: faltantes, requisitos: req, appliedRules: calc.appliedRules };
+  }
+
+  return { status: STATUS.NAO_ACOMP, prioridade: 4, faltantes: faltantes, requisitos: req, appliedRules: calc.appliedRules };
 }
 
 // =================================================================================
