@@ -99,19 +99,24 @@ function distribuirDadosCentral() {
 
     // B. Preparar dados para FILA
     let dataAcompFormatada = formatarDataParaFila(l[IDX.DATA_ACOMP]);
+    
+    function nisValidoFila_(nis) {
+      const d = String(nis || "").replace(/\D/g, "");
+      return d.length === 11 && !/^0+$/.test(d);
+    }
 
     // Fila E-gestor (Prioridade 1)
-    if (prioridade === 1) {
+    if (prioridade === 1 && nisValidoFila_(l[IDX.NIS])) {
       exportacaoFila.egestor.push([
-        l[IDX.NIS],          
+        l[IDX.NIS],
         dataAcompFormatada,
-        l[IDX.PESO],         
-        l[IDX.ALTURA],       
-        l[IDX.STATUS_CALCULADO],       
-        l[IDX.DATA_IMPORTACAO],   
+        l[IDX.PESO],
+        l[IDX.ALTURA],
+        l[IDX.STATUS_CALCULADO],
+        l[IDX.DATA_IMPORTACAO],
         l[IDX.ORIGEM],
-        "", // Coluna H: Status Robô (Vazio para processar)
-        ""  // Coluna I: Data Robô (Vazio)
+        "",
+        ""
       ]);
     }
 
