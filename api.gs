@@ -422,6 +422,14 @@ function runHealthCheck() {
 
 const HEALTHCHECK_SAMPLE_BLACKLIST = ["MODELO", "TEMPLATE", "EXEMPLO", "COPIA DE MODELO", "MODELO MAPA"];
 
+function normalizeTextForComparison_(text) {
+  return String(text || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 // Pega 1 Google Sheets dentro da pasta (sem entrar em subpastas)
 function findSampleSpreadsheetByTipo_(folder, tipo, filtroExclusao) {
   const seen = new Set();
@@ -472,10 +480,10 @@ function findSampleSpreadsheetByTipo_(folder, tipo, filtroExclusao) {
   }
 
   if (tipo === "SUBPASTAS_FILTRADAS") {
-    const filtro = String(filtroExclusao || "").toLowerCase().trim();
+    const filtro = normalizeTextForComparison_(filtroExclusao);
     const filterFn = (sf) => {
       if (!filtro) return true;
-      return !String(sf.getName() || "").toLowerCase().includes(filtro);
+      return !normalizeTextForComparison_(sf.getName()).includes(filtro);
     };
     return pickFirstSheetFile_(folder) || pickFromSubfolders_(folder, filterFn);
   }

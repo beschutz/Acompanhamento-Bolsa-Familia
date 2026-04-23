@@ -947,6 +947,14 @@ function extrairNomeUnidade(nomeArquivo) {
   return parteUnidade ? parteUnidade.trim().toUpperCase() : limpo.toUpperCase();
 }
 
+function normalizarTextoComparacao(texto) {
+  return String(texto || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 function mapearTodosArquivos() {
   let lista = [];
   const pastasDinamicas = getPastasConfigAtuais();
@@ -968,10 +976,12 @@ function mapearTodosArquivos() {
         while (subs.hasNext()) listarArquivos(subs.next(), z, lista);
       } else if (cfg.tipo === "SUBPASTAS_FILTRADAS") {
         listarArquivos(pasta, z, lista); 
+        const filtro = normalizarTextoComparacao(cfg.filtroExclusao);
         let subs = pasta.getFolders(); 
         while (subs.hasNext()) {
           let sp = subs.next(); 
-          if (!sp.getName().toLowerCase().includes(cfg.filtroExclusao)) listarArquivos(sp, z, lista);
+          const nomeSubpasta = normalizarTextoComparacao(sp.getName());
+          if (!filtro || !nomeSubpasta.includes(filtro)) listarArquivos(sp, z, lista);
         }
       }
     } catch(e) {
