@@ -350,10 +350,9 @@ function extrairDadosPlanilha(idPlanilha, zona, nomeArquivo, condCfg) {
       
       // Master DB [0:PRIORIDADE, 1:NIS, 2:CNS, 3:NOME, 4:IDADE, 5:DATA_NASC, 6:DATA_ACOMP, 7:VACINACAO, 8:PESO, 9:ALTURA, 10:GESTANTE, 11:PRE_NATAL, 12:DUM, 13:ORIGEM, 14:STATUS_CALCULADO, 15:COR_ORIGEM, 16:DATA_IMPORTACAO, 17:CPF, 18:US_REFERENCIA]
       let novoRegistro = [ 
-        resultado.prioridade, nis, "", nome, idade, dataNasc, dataAcomp, vacina, peso, altura, 
+        resultado.prioridade, nis, cns, nome, idade, dataNasc, dataAcomp, vacina, peso, altura, 
         gestante, preNatal, dum, zona, resultado.status, "", hoje, cpf, nomeUnidade 
       ];
-      novoRegistro[2] = cns;
       
       let chavePessoa = nis || cns || cpf || nome;
       if (chavePessoa === nome) {
@@ -458,8 +457,10 @@ function mapearIndicesCabecalhoImport_(linhaCabecalho) {
   return colunas;
 }
 
+const MAX_HEADER_SEARCH_ROWS_IMPORT = 20;
+
 function encontrarLinhaCabecalhoImport_(dadosBrutos) {
-  const limite = Math.min(dadosBrutos.length, 20);
+  const limite = Math.min(dadosBrutos.length, MAX_HEADER_SEARCH_ROWS_IMPORT);
   
   for (let i = 0; i < limite; i++) {
     const linha = dadosBrutos[i] || [];
