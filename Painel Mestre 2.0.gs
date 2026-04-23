@@ -346,7 +346,7 @@ function extrairDadosPlanilha(idPlanilha, zona, nomeArquivo, condCfg) {
       let idade = "";
       if (dataNasc) idade = calcularIdade(dataNasc);
       
-      let resultado = classificarPaciente(peso, altura, dataAcomp, idade, vacina, acompUS, acompEgestor, gestante, "QUALQUER", condCfg);
+      let resultado = classificarPaciente(peso, altura, dataAcomp, idade, vacina, acompUS, acompEgestor, gestante, "QUALQUER", condCfg, nis);
       
       // Master DB [0:PRIORIDADE, 1:NIS, 2:CNS, 3:NOME, 4:IDADE, 5:DATA_NASC, 6:DATA_ACOMP, 7:VACINACAO, 8:PESO, 9:ALTURA, 10:GESTANTE, 11:PRE_NATAL, 12:DUM, 13:ORIGEM, 14:STATUS_CALCULADO, 15:COR_ORIGEM, 16:DATA_IMPORTACAO, 17:CPF, 18:US_REFERENCIA]
       let novoRegistro = [ 
@@ -522,11 +522,26 @@ function validarMapeamentoCabecalhosImportacao_() {
   return true;
 }
 
+function normalizarNis_(nis) {
+  return String(nis || "").replace(/\D/g, "");
+}
+
+function hasNisValido_(nis) {
+  const d = normalizarNis_(nis);
+  if (!d) return false;
+  if (d.length !== 11) return false;
+  if (/^0+$/.test(d)) return false;
+  return true;
+}
+
 // LÓGICA DE PRIORIDADES (ATUALIZADA)
-function classificarPaciente(peso, altura, dataAcomp, idade, vacina, acompUS, acompEgestor, gestante, sexo, condCfg) {
+function classificarPaciente(peso, altura, dataAcomp, idade, vacina, acompUS, acompEgestor, gestante, sexo, condCfg, nis) {
   // 0. Prioridade Máxima: Já acompanhado no e-Gestor
   if (acompEgestor === "SIM") return { status: STATUS.CONCLUIDO, prioridade: 0 };
-  
+
+  // NOVO GATE: sem NIS válido não pode ir para fila eGestor (prioridade 1)
+  const nisValido = hasNisValido_(nis);
+
   const simulacao = simularCondicionalidadesInterno_({
     idade: idade,
     sexo: sexo || "QUALQUER",
@@ -540,10 +555,13 @@ function classificarPaciente(peso, altura, dataAcomp, idade, vacina, acompUS, ac
   }, condCfg);
 
   if (simulacao && simulacao.status && simulacao.prioridade !== undefined) {
+    // Se cairia em prioridade 1 mas não tem NIS, rebaixa para fila E-SUS (2)
+    if (simulacao.prioridade === 1 && !nisValido) {
+      return { status: STATUS.INCOMPLETO, prioridade: 2 };
+    }
     return { status: simulacao.status, prioridade: simulacao.prioridade };
   }
 
-  // Fallback seguro em caso de erro inesperado
   return { status: STATUS.NAO_ACOMP, prioridade: 4 };
 }
 
