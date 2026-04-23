@@ -977,7 +977,7 @@ function mapearTodosArquivos() {
       } else if (cfg.tipo === "SUBPASTAS_FILTRADAS") {
         listarArquivos(pasta, z, lista); 
         let subs = pasta.getFolders(); 
-        if (cfg.filtroExclusao == null) {
+        if (cfg.filtroExclusao === null || cfg.filtroExclusao === undefined) {
           while (subs.hasNext()) listarArquivos(subs.next(), z, lista);
           continue;
         }
