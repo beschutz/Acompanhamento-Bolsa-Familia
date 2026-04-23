@@ -981,7 +981,7 @@ function mapearTodosArquivos() {
         while (subs.hasNext()) {
           let sp = subs.next(); 
           const nomeSubpasta = normalizarTextoComparacao(sp.getName());
-          if (!filtro || !nomeSubpasta.includes(filtro)) listarArquivos(sp, z, lista);
+          if (!nomeSubpasta.includes(filtro)) listarArquivos(sp, z, lista);
         }
       }
     } catch(e) {

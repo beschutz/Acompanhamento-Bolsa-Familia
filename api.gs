@@ -482,7 +482,6 @@ function findSampleSpreadsheetByTipo_(folder, tipo, filtroExclusao) {
   if (tipo === "SUBPASTAS_FILTRADAS") {
     const filtro = normalizeTextForComparison_(filtroExclusao);
     const filterFn = (sf) => {
-      if (!filtro) return true;
       return !normalizeTextForComparison_(sf.getName()).includes(filtro);
     };
     return pickFirstSheetFile_(folder) || pickFromSubfolders_(folder, filterFn);
