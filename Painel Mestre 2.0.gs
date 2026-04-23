@@ -387,7 +387,7 @@ function normalizarCabecalhoImport_(txt) {
   let limpo = String(txt || "").toLowerCase();
   limpo = limpo.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   limpo = limpo.replace(/[\r\n]+/g, " ");
-  limpo = limpo.replace(/\(([bcd])\)/gi, " ");
+  limpo = limpo.replace(/\((?:[bcd])\)/gi, " ");
   limpo = limpo.replace(/[^\w\s]/g, " ");
   limpo = limpo.replace(/\s+/g, " ").trim();
   return limpo;
@@ -444,7 +444,7 @@ function mapearIndicesCabecalhoImport_(linhaCabecalho) {
     for (let chave in aliases) {
       if (colunas[chave] !== undefined) continue;
       const sinonimos = aliases[chave];
-      const match = sinonimos.some(s => cabNorm === s || cabNorm.includes(s));
+      const match = sinonimos.some(s => cabNorm === s || contemAliasComoPalavra_(cabNorm, s));
       if (match) {
         colunas[chave] = i;
       }
@@ -460,7 +460,7 @@ function encontrarLinhaCabecalhoImport_(dadosBrutos) {
   for (let i = 0; i < limite; i++) {
     const linha = dadosBrutos[i] || [];
     const colunas = mapearIndicesCabecalhoImport_(linha);
-    const temIdentificador = colunas.nis !== undefined || colunas.cpf !== undefined;
+    const temIdentificador = colunas.nis !== undefined || colunas.cpf !== undefined || colunas.cns !== undefined;
     
     if (temIdentificador && colunas.nome !== undefined) {
       return { linhaCabecalho: i, colunas: colunas };
@@ -474,6 +474,13 @@ function obterValorPorChaveImport_(linha, colunas, chave) {
   const idx = colunas[chave];
   if (idx === undefined || idx < 0 || idx >= linha.length) return "";
   return linha[idx];
+}
+
+function contemAliasComoPalavra_(texto, alias) {
+  if (!texto || !alias) return false;
+  const aliasEscapado = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`(^|\\s)${aliasEscapado}(\\s|$)`);
+  return regex.test(texto);
 }
 
 function validarMapeamentoCabecalhosImportacao_() {
