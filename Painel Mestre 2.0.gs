@@ -330,7 +330,7 @@ function extrairDadosPlanilha(idPlanilha, zona, nomeArquivo, condCfg) {
 
       // Pula linhas em branco, ou a linha de "Cód. Família" (que não tem NIS/CPF validos)
       if (colA_Bruta.includes("cód") || colA_Bruta.includes("código")) continue;
-      if ((nis.length < 7 && cpf.length < 10) || nome.length < 3) continue;
+      if ((nis.length < 7 && cpf.length < 10 && cns.length < 6) || nome.length < 3) continue;
       
       let dataNasc = normalizarData(obterValorPorChaveImport_(linha, col, "data_nascimento"));
       let acompUS = limparCategorico(obterValorPorChaveImport_(linha, col, "acompanhado_na_us"));
@@ -356,6 +356,9 @@ function extrairDadosPlanilha(idPlanilha, zona, nomeArquivo, condCfg) {
       novoRegistro[2] = cns;
       
       let chavePessoa = nis || cns || cpf || nome;
+      if (chavePessoa === nome) {
+        Logger.log(`[IMPORT][WARN][${zona}] Arquivo "${nomeArquivo}" | Unidade "${nomeUnidade}" | Aba "${nomeAba}" | Linha ${i + 1}: registro sem NIS/CNS/CPF válido, usando NOME como chave provisória.`);
+      }
       
       if (mapaPacientes.has(chavePessoa)) {
         let registroExistente = mapaPacientes.get(chavePessoa);
@@ -387,6 +390,7 @@ function normalizarCabecalhoImport_(txt) {
   let limpo = String(txt || "").toLowerCase();
   limpo = limpo.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   limpo = limpo.replace(/[\r\n]+/g, " ");
+  // Remove marcadores de bloco do layout LESTE: (B), (C), (D).
   limpo = limpo.replace(/\((?:[bcd])\)/gi, " ");
   limpo = limpo.replace(/[^\w\s]/g, " ");
   limpo = limpo.replace(/\s+/g, " ").trim();
