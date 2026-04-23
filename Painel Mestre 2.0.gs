@@ -390,7 +390,7 @@ function normalizarCabecalhoImport_(txt) {
   limpo = limpo.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   limpo = limpo.replace(/[\r\n]+/g, " ");
   // Remove marcadores de bloco do layout LESTE: (B), (C), (D).
-  limpo = limpo.replace(/\((?:[bcd])\)/gi, " ");
+  limpo = limpo.replace(/\((?:b|c|d)\)/g, " ");
   limpo = limpo.replace(/[^\w\s]/g, " ");
   limpo = limpo.replace(/\s+/g, " ").trim();
   return limpo;
