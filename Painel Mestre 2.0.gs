@@ -301,31 +301,47 @@ function extrairDadosPlanilha(idPlanilha, zona, nomeArquivo, condCfg) {
   
   for (let abaAlvo of abasEncontradas) {
     const dadosBrutos = abaAlvo.getDataRange().getDisplayValues();
+    const nomeAba = abaAlvo.getName();
+    const cabecalhoInfo = encontrarLinhaCabecalhoImport_(dadosBrutos);
     
-    // Inicia a leitura a partir da linha 7 (Índice 6)
-    for (let i = 6; i < dadosBrutos.length; i++) {
+    if (!cabecalhoInfo) {
+      Logger.log(`[IMPORT][WARN][${zona}] Arquivo "${nomeArquivo}" | Unidade "${nomeUnidade}" | Aba "${nomeAba}": cabeçalho não reconhecido.`);
+      continue;
+    }
+    
+    const col = cabecalhoInfo.colunas;
+    const faltantesCriticas = [];
+    if (col.nome === undefined) faltantesCriticas.push("nome");
+    if (col.nis === undefined && col.cpf === undefined) faltantesCriticas.push("nis/cpf");
+    
+    if (faltantesCriticas.length > 0) {
+      Logger.log(`[IMPORT][WARN][${zona}] Arquivo "${nomeArquivo}" | Unidade "${nomeUnidade}" | Aba "${nomeAba}": colunas críticas ausentes (${faltantesCriticas.join(", ")}).`);
+      continue;
+    }
+    
+    for (let i = cabecalhoInfo.linhaCabecalho + 1; i < dadosBrutos.length; i++) {
       const linha = dadosBrutos[i];
       
-      let nis = limparNumeroComPrefixo(linha[0]);
-      let cpf = limparNumeroComPrefixo(linha[1]);
-      let nome = limparTexto(linha[2]);
-      let colA_Bruta = String(linha[0]).toLowerCase();
+      let nis = limparNumeroComPrefixo(obterValorPorChaveImport_(linha, col, "nis"));
+      let cns = limparNumeroComPrefixo(obterValorPorChaveImport_(linha, col, "cns"));
+      let cpf = limparNumeroComPrefixo(obterValorPorChaveImport_(linha, col, "cpf"));
+      let nome = limparTexto(obterValorPorChaveImport_(linha, col, "nome"));
+      let colA_Bruta = String(obterValorPorChaveImport_(linha, col, "nis") || linha[0] || "").toLowerCase();
 
       // Pula linhas em branco, ou a linha de "Cód. Família" (que não tem NIS/CPF validos)
       if (colA_Bruta.includes("cód") || colA_Bruta.includes("código")) continue;
       if ((nis.length < 7 && cpf.length < 10) || nome.length < 3) continue;
       
-      // Como está padronizado, pegamos os índices diretos das colunas
-      let dataNasc = normalizarData(linha[3]);
-      let acompUS = limparCategorico(linha[4]);
-      let dataAcomp = normalizarData(linha[5]);
-      let peso = normalizarNumero(linha[6]);
-      let altura = normalizarAltura(linha[7]);
-      let vacina = limparCategorico(linha[8]);
-      let gestante = limparCategorico(linha[10]);
-      let dum = normalizarData(linha[11]);
-      let preNatal = limparCategorico(linha[12]);
-      let acompEgestor = limparCategorico(linha[15]);
+      let dataNasc = normalizarData(obterValorPorChaveImport_(linha, col, "data_nascimento"));
+      let acompUS = limparCategorico(obterValorPorChaveImport_(linha, col, "acompanhado_na_us"));
+      let dataAcomp = normalizarData(obterValorPorChaveImport_(linha, col, "data_acompanhamento"));
+      let peso = normalizarNumero(obterValorPorChaveImport_(linha, col, "peso"));
+      let altura = normalizarAltura(obterValorPorChaveImport_(linha, col, "altura_estatura"));
+      let vacina = limparCategorico(obterValorPorChaveImport_(linha, col, "vacinacao_em_dia"));
+      let gestante = limparCategorico(obterValorPorChaveImport_(linha, col, "informacao_gestacional"));
+      let dum = normalizarData(obterValorPorChaveImport_(linha, col, "dum"));
+      let preNatal = limparCategorico(obterValorPorChaveImport_(linha, col, "pre_natal"));
+      let acompEgestor = limparCategorico(obterValorPorChaveImport_(linha, col, "acompanhado_no_egestor"));
       
       let idade = "";
       if (dataNasc) idade = calcularIdade(dataNasc);
@@ -337,8 +353,9 @@ function extrairDadosPlanilha(idPlanilha, zona, nomeArquivo, condCfg) {
         resultado.prioridade, nis, "", nome, idade, dataNasc, dataAcomp, vacina, peso, altura, 
         gestante, preNatal, dum, zona, resultado.status, "", hoje, cpf, nomeUnidade 
       ];
+      novoRegistro[2] = cns;
       
-      let chavePessoa = nis || cpf || nome;
+      let chavePessoa = nis || cns || cpf || nome;
       
       if (mapaPacientes.has(chavePessoa)) {
         let registroExistente = mapaPacientes.get(chavePessoa);
@@ -364,6 +381,135 @@ function extrairDadosPlanilha(idPlanilha, zona, nomeArquivo, condCfg) {
   
   // Retorna todos os pacientes de forma limpa (sem duplicações entre abas do mesmo arquivo)
   return Array.from(mapaPacientes.values());
+}
+
+function normalizarCabecalhoImport_(txt) {
+  let limpo = String(txt || "").toLowerCase();
+  limpo = limpo.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  limpo = limpo.replace(/[\r\n]+/g, " ");
+  limpo = limpo.replace(/\(([bcd])\)/gi, " ");
+  limpo = limpo.replace(/[^\w\s]/g, " ");
+  limpo = limpo.replace(/\s+/g, " ").trim();
+  return limpo;
+}
+
+function getAliasesCabecalhoImport_() {
+  if (getAliasesCabecalhoImport_._cache) return getAliasesCabecalhoImport_._cache;
+  
+  const aliases = {
+    nis: [
+      "nis",
+      "nis numero de identificacao social",
+      "numero de identificacao social"
+    ],
+    cns: [
+      "cns",
+      "cns cartao nacional de saude",
+      "cartao nacional de saude"
+    ],
+    cpf: ["cpf"],
+    nome: ["nome", "nome completo"],
+    data_nascimento: ["data nascimento", "data de nascimento", "dt nascimento"],
+    data_acompanhamento: ["data acompanhamento", "data de acompanhamento", "dt acompanhamento"],
+    acompanhado_na_us: ["acompanhado na us", "acompanhado us", "acompanhado na unidade de saude"],
+    motivo_nao_acompanhamento: ["motivo nao acompanhamento", "motivo nao acompanhou", "motivo do nao acompanhamento"],
+    peso: ["peso", "peso kg", "peso em kg"],
+    altura_estatura: ["altura", "altura cm", "altura em cm", "estatura", "estatura cm", "estatura em cm"],
+    vacinacao_em_dia: ["vacina", "vacinacao em dia", "vacinacao em dia b"],
+    motivo_nao_vacinacao: ["motivo nao vacinacao", "motivo nao vacinou", "motivo da nao vacinacao"],
+    informacao_gestacional: ["gestante", "informacao gestacional", "informacao de gestacao"],
+    pre_natal: ["pre natal", "realizou o pre natal", "se gestante realizou o pre natal"],
+    dum: ["dum", "d u m"],
+    acompanhado_no_egestor: ["acompanhado no egestor", "acompanhado no gestor", "acompanhado egestor"],
+    observacoes: ["observacoes", "observacao", "obs"]
+  };
+  
+  const normalizado = {};
+  for (let chave in aliases) {
+    normalizado[chave] = aliases[chave].map(a => normalizarCabecalhoImport_(a));
+  }
+  
+  getAliasesCabecalhoImport_._cache = normalizado;
+  return normalizado;
+}
+
+function mapearIndicesCabecalhoImport_(linhaCabecalho) {
+  const aliases = getAliasesCabecalhoImport_();
+  const colunas = {};
+  
+  for (let i = 0; i < linhaCabecalho.length; i++) {
+    const cabNorm = normalizarCabecalhoImport_(linhaCabecalho[i]);
+    if (!cabNorm) continue;
+    
+    for (let chave in aliases) {
+      if (colunas[chave] !== undefined) continue;
+      const sinonimos = aliases[chave];
+      const match = sinonimos.some(s => cabNorm === s || cabNorm.includes(s));
+      if (match) {
+        colunas[chave] = i;
+      }
+    }
+  }
+  
+  return colunas;
+}
+
+function encontrarLinhaCabecalhoImport_(dadosBrutos) {
+  const limite = Math.min(dadosBrutos.length, 20);
+  
+  for (let i = 0; i < limite; i++) {
+    const linha = dadosBrutos[i] || [];
+    const colunas = mapearIndicesCabecalhoImport_(linha);
+    const temIdentificador = colunas.nis !== undefined || colunas.cpf !== undefined;
+    
+    if (temIdentificador && colunas.nome !== undefined) {
+      return { linhaCabecalho: i, colunas: colunas };
+    }
+  }
+  
+  return null;
+}
+
+function obterValorPorChaveImport_(linha, colunas, chave) {
+  const idx = colunas[chave];
+  if (idx === undefined || idx < 0 || idx >= linha.length) return "";
+  return linha[idx];
+}
+
+function validarMapeamentoCabecalhosImportacao_() {
+  const cabecalhoPadrao = [
+    "NIS", "CPF", "NOME", "DATA NASCIMENTO", "ACOMPANHADO NA US", "DATA ACOMPANHAMENTO", "PESO (kg)", "ALTURA (cm)",
+    "VACINA", "MOTIVO NÃO VACINAÇÃO", "GESTANTE", "DUM", "PRÉ-NATAL", "TELEFONE", "ENDEREÇO", "ACOMPANHADO NO EGESTOR", "OBSERVAÇÕES", "FORA DE ÁREA"
+  ];
+  
+  const cabecalhoLeste = [
+    "NIS\n(Número de Identificação Social)", "CNS\nCartão Nacional de Saúde", "CPF", "Nome", "Data de nascimento", "Data de acompanhamento",
+    "Acompanhado na US", "Motivo não acompanhamento", "Peso em kg (B)", "Estatura em cm (B)",
+    "Ocorrência identificada - Não Informação Nutricional", "Vacinação em dia? (B)", "Motivo não Vacinação",
+    "Informação\nGestacional (C)", "Se gestante - Realizou o Pré-Natal? (D)", "DUM (D)", "ACOMPANHADO NO EGESTOR", "OBSERVAÇÕES"
+  ];
+  
+  const casos = [
+    { nome: "PADRAO", header: cabecalhoPadrao, obrigatorias: ["nis", "cpf", "nome", "data_nascimento", "data_acompanhamento", "acompanhado_na_us", "peso", "altura_estatura", "vacinacao_em_dia", "informacao_gestacional", "pre_natal", "dum", "acompanhado_no_egestor", "observacoes"] },
+    { nome: "LESTE", header: cabecalhoLeste, obrigatorias: ["nis", "cns", "cpf", "nome", "data_nascimento", "data_acompanhamento", "acompanhado_na_us", "motivo_nao_acompanhamento", "peso", "altura_estatura", "vacinacao_em_dia", "motivo_nao_vacinacao", "informacao_gestacional", "pre_natal", "dum", "acompanhado_no_egestor", "observacoes"] }
+  ];
+  
+  let falhas = [];
+  
+  for (let caso of casos) {
+    const mapeamento = mapearIndicesCabecalhoImport_(caso.header);
+    const faltantes = caso.obrigatorias.filter(c => mapeamento[c] === undefined);
+    if (faltantes.length) {
+      falhas.push(`${caso.nome}: ${faltantes.join(", ")}`);
+    }
+  }
+  
+  if (falhas.length) {
+    throw new Error(`Falha na validação de mapeamento de cabeçalhos: ${falhas.join(" | ")}`);
+  }
+  
+  Logger.log("Validação de mapeamento de cabeçalhos concluída com sucesso (PADRÃO e LESTE).");
+  return true;
 }
 
 // LÓGICA DE PRIORIDADES (ATUALIZADA)
