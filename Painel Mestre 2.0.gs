@@ -354,10 +354,7 @@ function extrairDadosPlanilha(idPlanilha, zona, nomeArquivo, condCfg) {
         gestante, preNatal, dum, zona, resultado.status, "", hoje, cpf, nomeUnidade 
       ];
       
-      let chavePessoa = nis || cns || cpf || nome;
-      if (chavePessoa === nome) {
-        Logger.log(`[IMPORT][WARN][${zona}] Arquivo "${nomeArquivo}" | Unidade "${nomeUnidade}" | Aba "${nomeAba}" | Linha ${i + 1}: registro sem NIS/CNS/CPF válido, usando NOME como chave provisória.`);
-      }
+      let chavePessoa = nis ? `NIS:${nis}` : (cns ? `CNS:${cns}` : `CPF:${cpf}`);
       
       if (mapaPacientes.has(chavePessoa)) {
         let registroExistente = mapaPacientes.get(chavePessoa);
@@ -483,7 +480,7 @@ function obterValorPorChaveImport_(linha, colunas, chave) {
 
 function contemAliasComoPalavra_(texto, alias) {
   if (!texto || !alias) return false;
-  const aliasEscapado = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const aliasEscapado = alias.replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&");
   const regex = new RegExp(`(^|\\s)${aliasEscapado}(\\s|$)`);
   return regex.test(texto);
 }
