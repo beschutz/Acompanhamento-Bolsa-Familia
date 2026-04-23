@@ -276,11 +276,13 @@ function apiEsus(params) {
     
     if (params.action === "save") {
       const r = params.row;
-      
-      if (params.dataMedicao && params.dataMedicao !== "-") sh.getRange(r, 6).setValue(params.dataMedicao);
-      if (params.peso && params.peso !== "-") sh.getRange(r, 8).setValue(params.peso);
-      if (params.altura && params.altura !== "-") sh.getRange(r, 9).setValue(params.altura);
-      if (params.vacinacao && params.vacinacao !== "-") sh.getRange(r, 7).setValue(params.vacinacao);
+      const rowRange = sh.getRange(r, 4, 1, 11); // col 4..14
+      const rowData = rowRange.getValues()[0];
+
+      if (params.dataMedicao && params.dataMedicao !== "-") rowData[2] = params.dataMedicao; // col 6
+      if (params.peso && params.peso !== "-") rowData[4] = params.peso; // col 8
+      if (params.altura && params.altura !== "-") rowData[5] = params.altura; // col 9
+      if (params.vacinacao && params.vacinacao !== "-") rowData[3] = params.vacinacao; // col 7
       
       let statusFinal = params.status;
       
@@ -289,19 +291,21 @@ function apiEsus(params) {
       }
       
       if (statusFinal === "ENCONTRADO COMPLETO") {
-        const idade = parseInt(sh.getRange(r, 4).getValue()); 
+        const idade = parseInt(rowData[0]); // col 4
         const condAtivas = getCondicionalidadesAtivas_(getVigenciaAtiva_());
         const calcReqs = calcularRequisitosFinais_({ idade: idade, sexo: "QUALQUER" }, condAtivas.config);
         const reqs = calcReqs.requisitos;
         if (!isNaN(idade) && reqs.vaccinationRequired) {
-          const vacinaStr = String(params.vacinacao).toUpperCase().trim();
+          const vacinaAtual = (params.vacinacao && params.vacinacao !== "-") ? params.vacinacao : rowData[3];
+          const vacinaStr = String(vacinaAtual).toUpperCase().trim();
           if (vacinaStr !== "SIM") {
             statusFinal = "DADOS PARCIAIS (FALTA VACINA)"; 
           }
         }
       }
       
-      sh.getRange(r, 14).setValue(statusFinal);
+      rowData[10] = statusFinal; // col 14
+      rowRange.setValues([rowData]);
       
       updateStatCounter('atualizacoes'); 
       updateHistory('esus');
@@ -541,6 +545,7 @@ function handleSaveRules_(params) {
 
   allRules[vigencia] = sanitized;
   props.setProperty('COND_RULES_BY_VIGENCIA', JSON.stringify(allRules));
+  if (typeof resetCondicionalidadesCache_ === "function") resetCondicionalidadesCache_();
 
   const audit = parseJsonSafe_(props.getProperty('COND_RULES_AUDIT_LOG'), []);
   let actorFromSession = "";
