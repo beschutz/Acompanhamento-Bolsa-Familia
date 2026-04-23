@@ -312,7 +312,7 @@ function extrairDadosPlanilha(idPlanilha, zona, nomeArquivo, condCfg) {
     const col = cabecalhoInfo.colunas;
     const faltantesCriticas = [];
     if (col.nome === undefined) faltantesCriticas.push("nome");
-    if (col.nis === undefined && col.cpf === undefined) faltantesCriticas.push("nis/cpf");
+    if (col.nis === undefined && col.cpf === undefined && col.cns === undefined) faltantesCriticas.push("nis/cpf/cns");
     
     if (faltantesCriticas.length > 0) {
       Logger.log(`[IMPORT][WARN][${zona}] Arquivo "${nomeArquivo}" | Unidade "${nomeUnidade}" | Aba "${nomeAba}": colunas críticas ausentes (${faltantesCriticas.join(", ")}).`);
@@ -354,7 +354,8 @@ function extrairDadosPlanilha(idPlanilha, zona, nomeArquivo, condCfg) {
         gestante, preNatal, dum, zona, resultado.status, "", hoje, cpf, nomeUnidade 
       ];
       
-      let chavePessoa = nis ? `NIS:${nis}` : (cns ? `CNS:${cns}` : `CPF:${cpf}`);
+      let chavePessoa = nis ? `NIS:${nis}` : (cns ? `CNS:${cns}` : (cpf ? `CPF:${cpf}` : ""));
+      if (!chavePessoa) continue;
       
       if (mapaPacientes.has(chavePessoa)) {
         let registroExistente = mapaPacientes.get(chavePessoa);
@@ -480,7 +481,7 @@ function obterValorPorChaveImport_(linha, colunas, chave) {
 
 function contemAliasComoPalavra_(texto, alias) {
   if (!texto || !alias) return false;
-  const aliasEscapado = alias.replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&");
+  const aliasEscapado = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const regex = new RegExp(`(^|\\s)${aliasEscapado}(\\s|$)`);
   return regex.test(texto);
 }
