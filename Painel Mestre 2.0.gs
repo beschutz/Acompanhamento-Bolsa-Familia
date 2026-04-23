@@ -976,15 +976,14 @@ function mapearTodosArquivos() {
         while (subs.hasNext()) listarArquivos(subs.next(), z, lista);
       } else if (cfg.tipo === "SUBPASTAS_FILTRADAS") {
         listarArquivos(pasta, z, lista); 
-        const filtroOriginal = cfg.filtroExclusao;
-        const filtro = normalizarTextoComparacao(cfg.filtroExclusao);
         let subs = pasta.getFolders(); 
+        if (cfg.filtroExclusao == null) {
+          while (subs.hasNext()) listarArquivos(subs.next(), z, lista);
+          continue;
+        }
+        const filtro = normalizarTextoComparacao(cfg.filtroExclusao);
         while (subs.hasNext()) {
           let sp = subs.next(); 
-          if (filtroOriginal == null) {
-            listarArquivos(sp, z, lista);
-            continue;
-          }
           const nomeSubpasta = normalizarTextoComparacao(sp.getName());
           if (!nomeSubpasta.includes(filtro)) listarArquivos(sp, z, lista);
         }
