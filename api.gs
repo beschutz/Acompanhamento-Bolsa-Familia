@@ -276,7 +276,7 @@ function apiEsus(params) {
     
     if (params.action === "save") {
       const r = params.row;
-      const rowRange = sh.getRange(r, 4, 1, 11); // col 4..14
+      const rowRange = sh.getRange(r, 4, 1, 11); // 11 colunas (14 - 4 + 1): da coluna 4 até 14, rowData índice 0..10
       const rowData = rowRange.getValues()[0];
 
       if (params.dataMedicao && params.dataMedicao !== "-") rowData[2] = params.dataMedicao; // col 6
@@ -545,7 +545,7 @@ function handleSaveRules_(params) {
 
   allRules[vigencia] = sanitized;
   props.setProperty('COND_RULES_BY_VIGENCIA', JSON.stringify(allRules));
-  if (typeof resetCondicionalidadesCache_ === "function") resetCondicionalidadesCache_();
+  if (typeof resetCondicionalidadesCache_ === "function") resetCondicionalidadesCache_(vigencia);
 
   const audit = parseJsonSafe_(props.getProperty('COND_RULES_AUDIT_LOG'), []);
   let actorFromSession = "";

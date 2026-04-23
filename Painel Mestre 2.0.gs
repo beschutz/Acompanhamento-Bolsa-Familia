@@ -33,7 +33,9 @@ const CONDICIONALIDADES_DEFAULTS_SAFE = {
   vaccinationRequired: false,
   vaccinationAgeMax: 7
 };
-const COND_ATIVAS_CACHE = {};
+// Cache em memória por vigência durante a execução atual para evitar leituras repetidas em ScriptProperties.
+// O runtime do Apps Script reinicia entre execuções, então este cache não persiste entre chamadas da API.
+let COND_ATIVAS_CACHE = {};
 
 
 // =================================================================================
@@ -462,8 +464,14 @@ function getCondicionalidadesAtivas_(vigencia) {
   return fallback;
 }
 
-function resetCondicionalidadesCache_() {
-  Object.keys(COND_ATIVAS_CACHE).forEach(k => delete COND_ATIVAS_CACHE[k]);
+function resetCondicionalidadesCache_(vigencia) {
+  const vig = String(vigencia || "").trim();
+  if (vig) {
+    delete COND_ATIVAS_CACHE[vig];
+    return;
+  }
+  // Sem vigência explícita: limpa todo o cache em memória da execução atual.
+  COND_ATIVAS_CACHE = {};
 }
 
 function mergeCondicionalidadesComPadrao_(cfg) {
