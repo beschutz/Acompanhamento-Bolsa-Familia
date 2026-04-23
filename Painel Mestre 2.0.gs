@@ -33,6 +33,9 @@ const CONDICIONALIDADES_DEFAULTS_SAFE = {
   vaccinationRequired: false,
   vaccinationAgeMax: 7
 };
+// Cache em memória por vigência durante a execução atual para evitar leituras repetidas em ScriptProperties.
+// O runtime do Apps Script reinicia entre execuções, então este cache não persiste entre chamadas da API.
+let COND_ATIVAS_CACHE = {};
 
 
 // =================================================================================
@@ -146,6 +149,7 @@ function executarCicloImportacao() {
 
   if (estado.fase === 'PROCESSAMENTO') {
     const mapaMestre = carregarMapaMestre(abaMestre);
+    const condCfgAtiva = getCondicionalidadesAtivas_(getVigenciaAtiva_()).config;
     
     while (estado.indiceArquivo < estado.listaArquivos.length) {
       if (Date.now() - tempoInicio > 270000) { // Limite de 4.5 minutos
@@ -168,7 +172,7 @@ function executarCicloImportacao() {
       mostrarNotificacao(`Lendo [${estado.indiceArquivo + 1}/${estado.listaArquivos.length}]: ${arquivo.nome}`, 3);
       
       try {
-        const dadosExtraidos = extrairDadosPlanilha(arquivo.id, arquivo.zona, arquivo.nome);
+        const dadosExtraidos = extrairDadosPlanilha(arquivo.id, arquivo.zona, arquivo.nome, condCfgAtiva);
         
         let novosParaInserir = [];
         let atualizacoesParaGravar = [];
@@ -199,7 +203,7 @@ function executarCicloImportacao() {
               
               // === RECALCULO INTELIGENTE DE PRIORIDADE E STATUS ===
               let novaPrioridade = parseInt(d[0]);
-              let calc = recalcularPrioridadeMestre(dadosAtuais);
+              let calc = recalcularPrioridadeMestre(dadosAtuais, condCfgAtiva);
 
               // Escolhe a melhor prioridade entre a calculada (que tem dados mesclados) e a da planilha (que pode ter checkboxes)
               let melhorPrioridade = Math.min(novaPrioridade, calc.prioridade);
@@ -264,7 +268,7 @@ function executarCicloImportacao() {
 // 5. MÓDULO DE EXTRAÇÃO PADRONIZADA COM MÚLTIPLAS ABAS (VIGÊNCIA 1/2026)
 // =================================================================================
 
-function extrairDadosPlanilha(idPlanilha, zona, nomeArquivo) {
+function extrairDadosPlanilha(idPlanilha, zona, nomeArquivo, condCfg) {
   const ss = SpreadsheetApp.openById(idPlanilha);
   
   // Lista com todos os nomes possíveis que as unidades de saúde estão usando
@@ -326,7 +330,7 @@ function extrairDadosPlanilha(idPlanilha, zona, nomeArquivo) {
       let idade = "";
       if (dataNasc) idade = calcularIdade(dataNasc);
       
-      let resultado = classificarPaciente(peso, altura, dataAcomp, idade, vacina, acompUS, acompEgestor, gestante);
+      let resultado = classificarPaciente(peso, altura, dataAcomp, idade, vacina, acompUS, acompEgestor, gestante, "QUALQUER", condCfg);
       
       // Master DB [0:PRIORIDADE, 1:NIS, 2:CNS, 3:NOME, 4:IDADE, 5:DATA_NASC, 6:DATA_ACOMP, 7:VACINACAO, 8:PESO, 9:ALTURA, 10:GESTANTE, 11:PRE_NATAL, 12:DUM, 13:ORIGEM, 14:STATUS_CALCULADO, 15:COR_ORIGEM, 16:DATA_IMPORTACAO, 17:CPF, 18:US_REFERENCIA]
       let novoRegistro = [ 
@@ -363,7 +367,7 @@ function extrairDadosPlanilha(idPlanilha, zona, nomeArquivo) {
 }
 
 // LÓGICA DE PRIORIDADES (ATUALIZADA)
-function classificarPaciente(peso, altura, dataAcomp, idade, vacina, acompUS, acompEgestor, gestante, sexo) {
+function classificarPaciente(peso, altura, dataAcomp, idade, vacina, acompUS, acompEgestor, gestante, sexo, condCfg) {
   // 0. Prioridade Máxima: Já acompanhado no e-Gestor
   if (acompEgestor === "SIM") return { status: STATUS.CONCLUIDO, prioridade: 0 };
   
@@ -377,7 +381,7 @@ function classificarPaciente(peso, altura, dataAcomp, idade, vacina, acompUS, ac
     acompUS: acompUS,
     acompEgestor: acompEgestor,
     gestante: gestante
-  });
+  }, condCfg);
 
   if (simulacao && simulacao.status && simulacao.prioridade !== undefined) {
     return { status: simulacao.status, prioridade: simulacao.prioridade };
@@ -388,7 +392,7 @@ function classificarPaciente(peso, altura, dataAcomp, idade, vacina, acompUS, ac
 }
 
 // RECALCULA A PRIORIDADE COM BASE NOS DADOS MESCLADOS (USADO PELO ATUALIZADOR)
-function recalcularPrioridadeMestre(row) {
+function recalcularPrioridadeMestre(row, condCfg) {
   let idade = row[4];
   let dataAcomp = String(row[6]).trim();
   let vacina = String(row[7]).trim();
@@ -406,7 +410,7 @@ function recalcularPrioridadeMestre(row) {
     acompUS: "",
     acompEgestor: "",
     gestante: gestante
-  });
+  }, condCfg);
 
   if (simulacao && simulacao.status && simulacao.prioridade !== undefined) {
     return { prioridade: simulacao.prioridade, status: simulacao.status };
@@ -435,24 +439,39 @@ function getCondicionalidadesAtivas_(vigencia) {
   const props = PropertiesService.getScriptProperties();
   const key = 'COND_RULES_BY_VIGENCIA';
   const vig = String(vigencia || getVigenciaAtiva_() || "DEFAULT").trim();
+  if (COND_ATIVAS_CACHE[vig]) return COND_ATIVAS_CACHE[vig];
 
   try {
     const all = JSON.parse(props.getProperty(key) || "{}");
     const saved = all[vig];
     if (saved && saved.defaults) {
-      return {
+      const result = {
         vigencia: vig,
         config: mergeCondicionalidadesComPadrao_(saved),
         source: "saved"
       };
+      COND_ATIVAS_CACHE[vig] = result;
+      return result;
     }
   } catch (e) {}
 
-  return {
+  const fallback = {
     vigencia: vig,
     config: getCondicionalidadesPadrao_(),
     source: "fallback"
   };
+  COND_ATIVAS_CACHE[vig] = fallback;
+  return fallback;
+}
+
+function resetCondicionalidadesCache_(vigencia) {
+  const vig = String(vigencia || "").trim();
+  if (vig) {
+    delete COND_ATIVAS_CACHE[vig];
+    return;
+  }
+  // Sem vigência explícita: limpa todo o cache em memória da execução atual.
+  COND_ATIVAS_CACHE = {};
 }
 
 function mergeCondicionalidadesComPadrao_(cfg) {
@@ -595,6 +614,7 @@ function atualizarMestreComRetornoFila() {
   if (!abaMestre || !ssFila) return "Erro: Planilhas não encontradas.";
   
   const mapaMestre = carregarMapaMestre(abaMestre);
+  const condCfgAtiva = getCondicionalidadesAtivas_(getVigenciaAtiva_()).config;
   let atualizados = 0;
 
   // A. E-GESTOR
@@ -647,7 +667,7 @@ function atualizarMestreComRetornoFila() {
             abaMestre.getRange(row, 10).setValue(dadosAtuais[9]); 
           }
 
-          let calc = recalcularPrioridadeMestre(dadosAtuais);
+          let calc = recalcularPrioridadeMestre(dadosAtuais, condCfgAtiva);
           
           let prioridadeAntiga = parseInt(dadosAtuais[0]);
           let prioridadeFinal = calc.prioridade;
