@@ -152,20 +152,21 @@ function ingestao_parsearArquivo_(nomeArquivo, conteudo) {
       const celula = String(linha[j] || '');
 
       // Extrai Código do Mapa
-      if (!matchArq && (celula.includes('C\u00f3digo do Mapa:') || celula.includes('Codigo do Mapa:'))) {
-        const m = celula.match(/C[o\u00f3]digo do Mapa:\s*(\d+)/i);
+      if (!matchArq && (celula.includes('Código do Mapa:') || celula.includes('Codigo do Mapa:'))) {
+        const m = celula.match(/C[oó]digo do Mapa:\s*(\d+)/i);
         if (m) codigoMapa = m[1];
       }
 
       // Extrai nome da Unidade / EAS
+      // Rótulo fixo do formulário BFA: "17 - EAS:" (campo 17 = Estabelecimento de Saúde)
       if (!nomeUnidade && (celula.includes('17 - EAS:') || celula.includes('17- EAS:'))) {
         const partes = celula.split('EAS:');
         if (partes.length > 1 && partes[1].trim()) {
           // Remove prefixo numérico ex.: "010 NOME" → "NOME"
-          nomeUnidade = partes[1].trim().replace(/^[\d\s]+/, '').trim();
+          nomeUnidade = partes[1].replace(/^[\d\s]+/, '').trim();
         } else if (i + 1 < linhasTabela.length) {
           // Nome pode estar na célula da próxima linha
-          nomeUnidade = String(linhasTabela[i + 1][j] || '').trim()
+          nomeUnidade = String(linhasTabela[i + 1][j] || '')
             .replace(/^[\d\s]+/, '').trim();
         }
       }

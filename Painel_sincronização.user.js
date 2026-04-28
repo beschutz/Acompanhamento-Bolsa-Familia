@@ -2475,9 +2475,15 @@ renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
             if (novos.length < files.length) {
                 log('⚠️ Alguns arquivos foram ignorados (apenas .xls / .html / .htm são aceitos).');
             }
-            // Evita duplicatas pelo nome
-            const existentes = new Set(arquivosPendentes.map(f => f.name));
-            novos.forEach(f => { if (!existentes.has(f.name)) arquivosPendentes.push(f); });
+            // Evita duplicatas pela combinação nome+tamanho
+            const existentes = new Set(arquivosPendentes.map(f => f.name + '|' + f.size));
+            let ignorados = 0;
+            novos.forEach(f => {
+                const chave = f.name + '|' + f.size;
+                if (!existentes.has(chave)) { arquivosPendentes.push(f); existentes.add(chave); }
+                else ignorados++;
+            });
+            if (ignorados > 0) log(`⚠️ ${ignorados} arquivo(s) ignorado(s) por já estarem na lista.`);
             atualizarListaArquivos();
         }
 

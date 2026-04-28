@@ -841,8 +841,9 @@ function handleIngestMapas_(params) {
       return { ok: false, err: 'Formato inválido. Cada item deve ter {nome, conteudo}.' };
     }
 
-    const ext = '.' + arq.nome.split('.').pop().toLowerCase();
-    if (!extPermitidas.includes(ext)) {
+    const dotIdx = arq.nome.lastIndexOf('.');
+    const ext = dotIdx !== -1 ? arq.nome.slice(dotIdx).toLowerCase() : '';
+    if (!ext || !extPermitidas.includes(ext)) {
       return {
         ok: false,
         err: 'Extensão não permitida: "' + arq.nome + '". Aceitas: ' + extPermitidas.join(', ')

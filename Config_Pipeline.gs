@@ -118,10 +118,6 @@ const CONFIG_PIPELINE = {
     maxFileSizeBytes: 10485760,
 
     // Extensões de arquivo aceitas pelo painel (em minúsculas, com ponto).
-    extensoesPermitidas: ['.xls', '.html', '.htm'],
-
-    // Nome da aba de destino onde os dados consolidados serão escritos.
-    // Deve coincidir com nomeAbaConsolidada acima.
-    nomeAbaDestino: 'DADOS'
+    extensoesPermitidas: ['.xls', '.html', '.htm']
   }
 };
