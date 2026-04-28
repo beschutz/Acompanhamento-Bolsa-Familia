@@ -98,6 +98,27 @@ function apiPanel(params) {
     if (action === "simulate_rules") {
       return jsonOut(handleSimulateRules_(params));
     }
+
+    // ── Construtor de Planilhas ──────────────────────────────────────────────
+    if (action === "list_templates") {
+      return jsonOut(handleListTemplates_());
+    }
+
+    if (action === "get_template") {
+      return jsonOut(handleGetTemplate_(params));
+    }
+
+    if (action === "save_template") {
+      return jsonOut(handleSaveTemplate_(params));
+    }
+
+    if (action === "delete_template") {
+      return jsonOut(handleDeleteTemplate_(params));
+    }
+
+    if (action === "create_sheet_from_template") {
+      return jsonOut(handleCreateSheetFromTemplate_(params));
+    }
     
     return jsonOut({ ok: false, err: "Ação desconhecida pelo Painel." });
 
