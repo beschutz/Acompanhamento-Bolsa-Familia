@@ -161,6 +161,16 @@ function apiPanel(params) {
       return jsonOut({ ok: true, msg: "Checkpoints do pipeline removidos." });
     }
 
+    // ── Ingestão de Mapas (upload do painel, substitui etapa Python/Colab) ───
+    if (action === "ingest_mapas") {
+      return jsonOut(handleIngestMapas_(params));
+    }
+
+    if (action === "get_ingest_status") {
+      const data = (typeof ingestao_getStatus !== 'undefined') ? ingestao_getStatus() : null;
+      return jsonOut({ ok: true, data: data });
+    }
+
     return jsonOut({ ok: false, err: "Ação desconhecida pelo Painel." });
 
     
@@ -792,4 +802,57 @@ function jsonOut(o) {
 
 function formatDate(d) { 
   return (d instanceof Date) ? Utilities.formatDate(d, Session.getScriptTimeZone(), "dd/MM/yyyy") : d; 
+}
+
+// =================================================================================
+// INGESTÃO DE MAPAS — handler da API
+// =================================================================================
+
+/**
+ * Valida os parâmetros recebidos e delega para ingestaoProcessarLote().
+ * Espera o parâmetro `arquivos_json`: JSON stringificado de
+ *   Array<{ nome: string, conteudo: string }>
+ */
+function handleIngestMapas_(params) {
+  if (typeof ingestaoProcessarLote === 'undefined') {
+    return { ok: false, err: 'Módulo IngestaoMapas.gs offline.' };
+  }
+
+  const arquivosJson = String(params.arquivos_json || '').trim();
+  if (!arquivosJson) return { ok: false, err: 'Parâmetro arquivos_json é obrigatório.' };
+
+  let arquivos;
+  try {
+    arquivos = JSON.parse(arquivosJson);
+  } catch (e) {
+    return { ok: false, err: 'arquivos_json inválido (JSON): ' + e.message };
+  }
+
+  if (!Array.isArray(arquivos) || arquivos.length === 0) {
+    return { ok: false, err: 'Nenhum arquivo no payload.' };
+  }
+
+  const cfg = CONFIG_PIPELINE;
+  const extPermitidas = (cfg.ingestao && cfg.ingestao.extensoesPermitidas) || ['.xls', '.html', '.htm'];
+  const maxBytes      = (cfg.ingestao && cfg.ingestao.maxFileSizeBytes)    || 10485760;
+
+  for (const arq of arquivos) {
+    if (!arq || typeof arq.nome !== 'string' || typeof arq.conteudo !== 'string') {
+      return { ok: false, err: 'Formato inválido. Cada item deve ter {nome, conteudo}.' };
+    }
+
+    const ext = '.' + arq.nome.split('.').pop().toLowerCase();
+    if (!extPermitidas.includes(ext)) {
+      return {
+        ok: false,
+        err: 'Extensão não permitida: "' + arq.nome + '". Aceitas: ' + extPermitidas.join(', ')
+      };
+    }
+
+    if (arq.conteudo.length > maxBytes) {
+      return { ok: false, err: 'Arquivo muito grande: "' + arq.nome + '" (' + Math.round(arq.conteudo.length / 1024) + ' KB).' };
+    }
+  }
+
+  return ingestaoProcessarLote(arquivos);
 }

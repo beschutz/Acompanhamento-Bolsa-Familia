@@ -11,10 +11,11 @@ desenvolvido para a Secretaria Municipal de Saúde de Porto Alegre.
 [1] Tampermonkey (bfa.saude.gov.br)
        │  Baixa arquivos "falso XLS" de mapa de acompanhamento
        ▼
-[2] Script Python (Google Colab)
-       │  Faz parsing dos .xls, extrai metadados
-       │  (Código do Mapa, Unidade/EAS, pacientes)
-       │  Gera Google Spreadsheet consolidada
+[2] Painel Web — aba "Pipeline Unidades" → seção "Descarregar Mapas"
+       │  Upload dos arquivos .xls diretamente no painel
+       │  (sem Colab, sem organizar pastas manualmente)
+       │  Parsing do HTML, extração de Código do Mapa, Unidade/EAS
+       │  e dados dos pacientes → grava na planilha consolidada
        ▼
 [3] Pipeline Apps Script — etapaCriarPlanilhasPorUnidade()
        │  Lê a planilha consolidada
@@ -38,13 +39,18 @@ desenvolvido para a Secretaria Municipal de Saúde de Porto Alegre.
        └  Dashboard, Gestão Planilhas, Pipeline, Construtor
 ```
 
+> **Novidade:** a etapa [2] substitui o script Python/Colab. Agora você faz
+> upload dos arquivos diretamente no Painel Web, sem precisar de nenhuma
+> ferramenta externa.
+
 ---
 
 ## Arquivos do Repositório
 
 | Arquivo | Responsabilidade |
 |---------|-----------------|
-| `Config_Pipeline.gs` | **Configuração centralizada** do pipeline: IDs de pastas, template, vigência, dicionário de regiões, time budget |
+| `Config_Pipeline.gs` | **Configuração centralizada** do pipeline: IDs de pastas, template, vigência, dicionário de regiões, time budget, parâmetros de ingestão |
+| `IngestaoMapas.gs` | **Parser de "falso XLS"**: recebe arquivos HTML do BFA, extrai Código do Mapa, Unidade/EAS e pacientes, persiste na planilha consolidada |
 | `Utils_Pipeline.gs` | Utilitários compartilhados: `normalizarTextoSemAcento`, `withTimeBudget`, `loadCheckpoint`/`saveCheckpoint`/`clearCheckpoint`, `logPadrao` |
 | `Pipeline_BolsaFamilia.gs` | Orquestrador do pipeline: `runPipelineCompleto`, `etapaCriarPlanilhasPorUnidade`, `etapaDistribuirPorRegiao`, `etapaCorrigirValidacoes` |
 | `ConstrutorPlanilhas.gs` | Motor de criação de planilhas por template (layout, validações, formatação condicional) |
@@ -74,7 +80,7 @@ const CONFIG_PIPELINE = {
   vigencia: '1/2026',
   nomeAbaVigencia: 'MAPA INDIVIDUALIZADO VIGÊNCIA 1/2026',
 
-  idPlanilhaConsolidada: 'ID_AQUI',   // ← planilha gerada pelo script Python
+  idPlanilhaConsolidada: 'ID_AQUI',   // ← planilha que receberá os dados da ingestão
   nomeAbaConsolidada: 'DADOS',
 
   pastaOrigemId: 'ID_PASTA_AQUI',     // ← pasta raiz no Drive
@@ -87,26 +93,54 @@ const CONFIG_PIPELINE = {
   },
 
   // dicionarioRegioes: ajuste palavras-chave conforme nomenclatura local
+
+  // ingestao: limites de upload (opcional — valores padrão abaixo)
+  ingestao: {
+    maxFileSizeBytes: 10485760,        // 10 MB por arquivo
+    extensoesPermitidas: ['.xls', '.html', '.htm']
+  }
 };
 ```
 
 ---
 
-## Ordem de Execução por Vigência
+## Fluxo Operacional Ponta a Ponta (para usuários não técnicos)
 
-### Etapa de Setup (início de cada vigência)
+### A. Início de vigência — gerar planilhas das unidades
 
 ```
-1. [Python/Colab]   Executar script de parsing dos .xls do BFA
-                    → gera planilha consolidada no Drive
+1. Baixe os mapas no site BFA
+   → Acesse https://bfa.saude.gov.br/mapaacompanhamento
+   → Use a automação Tampermonkey (automacao_baixar_mapas.user.js) para
+     baixar todos os mapas automaticamente
+   → Os arquivos serão salvos na pasta "Downloads" do seu computador
 
-2. [Apps Script]    Preencher Config_Pipeline.gs com IDs atualizados
+2. Abra o Painel Web (ícone Violentmonkey/Tampermonkey)
+   → Clique na aba "Pipeline Unidades"
 
-3. [Apps Script]    runPipelineCompleto()
-                    ou etapas individuais (ver abaixo)
+3. Envie os arquivos baixados (seção "Etapa 0 · Descarregar Mapas")
+   → Arraste os arquivos .xls para a área indicada
+     ou clique para selecionar múltiplos arquivos
+   → Clique em "PROCESSAR X ARQUIVOS"
+   → Aguarde a mensagem de confirmação:
+     "✅ X arquivos processados — Y unidades, Z pacientes"
+   → Mensagem de sucesso: "📋 Mapas gerados! Agora clique em
+     Executar Pipeline Completo..."
+
+4. Execute o Pipeline Completo
+   → Clique no botão "Executar Pipeline Completo"
+   → Confirme a operação
+   → Aguarde (pode precisar de várias rodadas — clique novamente se aparecer
+     mensagem de pausa)
+   → Resultado final: planilhas criadas por unidade, distribuídas por região
+     e com validações corrigidas
+
+5. Verifique o resultado
+   → No painel, os indicadores "Etapa 1 · Criar", "Etapa 2 · Distribuir" e
+     "Etapa 3 · Validações" devem mostrar "CONCLUIDO"
 ```
 
-### Operação Diária
+### B. Operação diária
 
 ```
 1. Importar dados das planilhas das unidades
@@ -129,8 +163,9 @@ const CONFIG_PIPELINE = {
 ### Via Painel Web (recomendado)
 
 1. Abra o painel e navegue até **"Pipeline Unidades"**
-2. Clique em **"Executar Pipeline Completo"** para rodar as 3 etapas
-3. Ou clique nas etapas individuais:
+2. **[Novo]** Na seção **"Etapa 0 · Descarregar Mapas"**, envie os arquivos .xls
+3. Clique em **"Executar Pipeline Completo"** para rodar as 3 etapas
+4. Ou clique nas etapas individuais:
    - **1. Criar Planilhas** → cria as planilhas por unidade
    - **2. Distribuir Regiões** → move para pastas regionais
    - **3. Corrigir Validações** → corrige regras de validação em massa
@@ -181,6 +216,7 @@ clearAllPipelineCheckpoints();
 clearCheckpoint('PIPELINE_CRIAR_CPK');
 clearCheckpoint('PIPELINE_DISTRIBUIR_CPK');
 clearCheckpoint('PIPELINE_VALIDACOES_CPK');
+clearCheckpoint('PIPELINE_INGEST_CPK');
 ```
 
 ### Resetar TUDO (inclusive stats e configurações do sistema)
@@ -208,6 +244,9 @@ para revisão manual.
 ## Comportamento Idempotente
 
 Todas as etapas do pipeline são **idempotentes**:
+- **Ingestão:** substitui todos os dados da planilha consolidada a cada envio;
+  se precisar re-enviar novos mapas, basta processar os arquivos novamente
+  e resetar os checkpoints do pipeline antes de reexecutar
 - **Criar:** verifica se a unidade já tem planilha criada (via checkpoint)
   antes de criar uma nova
 - **Distribuir:** registra quais arquivos já foram movidos; pula na
@@ -226,7 +265,6 @@ ficam salvas em `ScriptProperties` e podem ser editadas via:
 Menu ⚙️ → Ver Configuração Ativa
 ```
 ou
-
 ```
 Menu ⚙️ → Painel Web → Configuração → Salvar Vigência
 ```
@@ -238,7 +276,12 @@ Menu ⚙️ → Painel Web → Configuração → Salvar Vigência
 | Problema | Causa Provável | Solução |
 |----------|---------------|---------|
 | "idPlanilhaConsolidada não configurado" | `Config_Pipeline.gs` não preenchido | Adicione o ID da planilha consolidada |
+| "Módulo IngestaoMapas.gs offline" | Arquivo não adicionado ao projeto Apps Script | Adicione `IngestaoMapas.gs` ao projeto |
+| "Nenhum paciente encontrado no arquivo" | Arquivo não é um mapa BFA válido ou tem formato diferente | Verifique se o arquivo foi baixado corretamente do portal BFA |
+| "Extensão não permitida" | Arquivo com extensão fora da lista | Use apenas `.xls`, `.html` ou `.htm` |
+| "Arquivo muito grande" | Arquivo excede o limite configurado (padrão 10 MB) | Aumente `ingestao.maxFileSizeBytes` em `Config_Pipeline.gs` |
 | "Pasta regional não configurada" | Pasta regional sem ID em `Config_Pipeline.gs` | Preencha os IDs de `pastasRegionais` |
 | "Nenhuma aba padrão encontrada" | Planilha da unidade usa aba com nome diferente | Adicione o nome em `nomesAlternativos` em `Pipeline_BolsaFamilia.gs` |
 | Unidades "não reconhecidas" no log | Nome da unidade não contém nenhum termo do dicionário | Adicione termos ao `dicionarioRegioes` em `Config_Pipeline.gs` |
 | Pipeline não continua após timeout | Checkpoint corrompido | Verifique com `getPipelineStatus()` ou resete com `clearAllPipelineCheckpoints()` |
+| Dados duplicados após re-ingestão | Pipeline foi executado com dados antigos | Resete os checkpoints do pipeline e execute novamente após nova ingestão |
