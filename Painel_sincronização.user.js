@@ -238,6 +238,7 @@
                         <div id="nav-planilhas" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">table_chart</span> Gestão Planilhas</div>
                         <div id="nav-config" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">settings</span> Configuração</div>
                         <div id="nav-condicionalidades" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">rule_settings</span> Condicionalidades</div>
+                        <div id="nav-construtor" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">build</span> Construtor</div>
                         <div style="height:1px;background:rgba(255,255,255,0.04);margin:14px 4px;"></div>
                         <div class="nav-section-label">Sistemas Externos</div>
                         <div id="nav-egestor" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">public</span> e-Gestor Login</div>
@@ -264,6 +265,7 @@
             'planilhas': renderPlanilhas,
             'config': renderConfig,
             'condicionalidades': renderCondicionalidades,
+            'construtor': renderConstrutor,
             'egestor': (c)=>renderLogin(c,'egestor'),
             'esus': (c)=>renderLogin(c,'esus')
         };
@@ -284,6 +286,7 @@
         document.getElementById('nav-planilhas').onclick = () => loadRoute('planilhas');
         document.getElementById('nav-config').onclick = () => loadRoute('config');
         document.getElementById('nav-condicionalidades').onclick = () => loadRoute('condicionalidades');
+        document.getElementById('nav-construtor').onclick = () => loadRoute('construtor');
         document.getElementById('nav-egestor').onclick = () => loadRoute('egestor');
         document.getElementById('nav-esus').onclick = () => loadRoute('esus');
 
@@ -1558,5 +1561,723 @@ renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
             navigator.clipboard.writeText(link).then(() => window.showToast('Link copiado!'));
         };
     }
+
+    // =============================================================================
+    // 🧩 CONSTRUTOR DE PLANILHAS
+    // =============================================================================
+    function renderConstrutor(container) {
+        const esc = (s) => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+        // ── API helper (reutiliza padrão do script) ─────────────────────────────
+        const apiC = (action, extra) => new Promise(resolve => {
+            const data = Object.entries(Object.assign({action, api_target:'panel', token:TOKEN_ACESSO}, extra||{}))
+                .map(([k,v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v==null?'':String(v))}`).join('&');
+            GM_xmlhttpRequest({
+                method:'POST', url:URL_APPS_SCRIPT,
+                headers:{'Content-Type':'application/x-www-form-urlencoded'}, data,
+                onload:(r)=>{ try { resolve(JSON.parse(r.responseText)); } catch{ resolve({ok:false,err:'Resposta inválida'}); } },
+                onerror:()=>resolve({ok:false,err:'Erro de rede'})
+            });
+        });
+
+        // ── Estado ──────────────────────────────────────────────────────────────
+        let templatesList = [];
+        let tpl = null;          // template em edição
+        let activeTab = 'layout';
+
+        // ── Helpers de template ──────────────────────────────────────────────────
+        const newBlocoId = () => 'bloco_' + Date.now();
+        const newColId   = () => 'col_'   + Date.now();
+
+        const clonePadrao = async () => {
+            const res = await apiC('get_template', {id:'__padrao__'});
+            if (!res || !res.ok) { window.showToast('Erro ao carregar modelo padrão.'); return null; }
+            const t = JSON.parse(JSON.stringify(res.data));
+            t.id   = 'tpl_' + Date.now();
+            t.nome = 'Novo Template';
+            return t;
+        };
+
+        // ── Render principal ─────────────────────────────────────────────────────
+        container.innerHTML = `
+        <div class="animate-fade" style="max-width:1280px;margin:0 auto;">
+            <!-- Cabeçalho -->
+            <div style="display:flex;align-items:flex-end;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.05);padding-bottom:20px;margin-bottom:24px;">
+                <div>
+                    <h1 style="font-size:26px;font-weight:900;color:white;letter-spacing:-0.5px;font-style:italic;text-transform:uppercase;margin:0;">🧩 Construtor de Planilhas</h1>
+                    <p style="font-size:12px;color:#475569;margin-top:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Crie e customize planilhas com layout visual padronizado</p>
+                </div>
+                <button id="cb-btn-novo" style="background:linear-gradient(135deg,#6366f1,#818cf8);border:none;color:white;font-weight:800;padding:12px 18px;border-radius:12px;cursor:pointer;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;display:flex;align-items:center;gap:8px;">
+                    <span class="material-symbols-rounded" style="font-size:16px;">add</span> NOVO TEMPLATE
+                </button>
+            </div>
+
+            <!-- Layout: lista + editor -->
+            <div style="display:grid;grid-template-columns:270px 1fr;gap:20px;align-items:start;">
+
+                <!-- Sidebar: lista de templates -->
+                <div>
+                    <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.14em;margin-bottom:10px;">Templates Salvos</div>
+                    <div id="cb-lista" style="display:flex;flex-direction:column;gap:8px;">
+                        <div style="font-size:11px;color:#64748b;">Carregando...</div>
+                    </div>
+                    <button id="cb-btn-padrao" class="btn-glass" style="width:100%;margin-top:12px;font-size:10px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;display:flex;align-items:center;gap:6px;justify-content:center;">
+                        <span class="material-symbols-rounded" style="font-size:15px;">restore</span> CARREGAR MODELO PADRÃO
+                    </button>
+                </div>
+
+                <!-- Área do editor (preenchida dinamicamente) -->
+                <div id="cb-editor">
+                    <div style="display:flex;align-items:center;justify-content:center;min-height:400px;color:#475569;font-weight:700;font-size:13px;">
+                        Selecione ou crie um template para editar.
+                    </div>
+                </div>
+            </div>
+        </div>`;
+
+        // ── Renderiza lista lateral ──────────────────────────────────────────────
+        const renderLista = () => {
+            const el = document.getElementById('cb-lista');
+            if (!el) return;
+            if (!templatesList.length) {
+                el.innerHTML = `<div style="font-size:11px;color:#64748b;font-weight:600;">Nenhum template salvo.</div>`;
+                return;
+            }
+            el.innerHTML = templatesList.map(t => `
+                <div data-tpl-id="${esc(t.id)}" class="cb-tpl-item glass-card"
+                     style="padding:12px 14px;cursor:pointer;border-radius:14px;margin:0;border:1px solid ${tpl&&tpl.id===t.id?'rgba(99,102,241,0.6)':'rgba(255,255,255,0.06)'};">
+                    <div style="font-size:11px;font-weight:800;color:${tpl&&tpl.id===t.id?'#818cf8':'#cbd5e1'};">${esc(t.nome)}</div>
+                    <div style="font-size:9px;color:#475569;margin-top:3px;">${t.atualizadoEm ? new Date(t.atualizadoEm).toLocaleString() : ''}</div>
+                </div>
+            `).join('');
+            el.querySelectorAll('.cb-tpl-item').forEach(item => {
+                item.onclick = async () => {
+                    const id = item.getAttribute('data-tpl-id');
+                    const res = await apiC('get_template', {id});
+                    if (!res || !res.ok) { window.showToast('Erro ao carregar template.'); return; }
+                    tpl = JSON.parse(JSON.stringify(res.data));
+                    renderLista();
+                    renderEditor();
+                };
+            });
+        };
+
+        // ── Renderiza editor completo ────────────────────────────────────────────
+        const renderEditor = () => {
+            const el = document.getElementById('cb-editor');
+            if (!el || !tpl) return;
+            el.innerHTML = `
+            <div>
+                <!-- Nome + ações do template -->
+                <div class="glass-card" style="padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                    <div style="flex:1;min-width:200px;">
+                        <label style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.12em;display:block;margin-bottom:5px;">Nome do Template</label>
+                        <input id="cb-tpl-nome" class="glass-input" value="${esc(tpl.nome||'')}" placeholder="Ex.: Mapa Vigência 1/2026">
+                    </div>
+                    <div style="display:flex;gap:8px;flex-shrink:0;">
+                        <button id="cb-btn-salvar" style="background:linear-gradient(135deg,#6366f1,#818cf8);border:none;color:white;font-weight:800;padding:10px 14px;border-radius:10px;cursor:pointer;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;">SALVAR</button>
+                        <button id="cb-btn-duplicar" class="btn-glass" style="font-size:10px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;display:flex;align-items:center;gap:5px;"><span class="material-symbols-rounded" style="font-size:15px;">content_copy</span> DUPLICAR</button>
+                        <button id="cb-btn-deletar" class="btn-glass" style="font-size:10px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:#fca5a5;border-color:rgba(239,68,68,0.35);display:flex;align-items:center;gap:5px;"><span class="material-symbols-rounded" style="font-size:15px;">delete</span> EXCLUIR</button>
+                    </div>
+                </div>
+
+                <!-- Tabs -->
+                <div style="display:flex;gap:4px;margin-bottom:16px;">
+                    ${['layout','regras','acoes'].map(tab => `
+                        <button id="cb-tab-${tab}" style="padding:9px 16px;border-radius:10px;border:1px solid ${activeTab===tab?'rgba(99,102,241,0.5)':'rgba(255,255,255,0.08)'};background:${activeTab===tab?'rgba(99,102,241,0.15)':'rgba(255,255,255,0.02)'};color:${activeTab===tab?'#818cf8':'#64748b'};font-size:10px;font-weight:900;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;">
+                            ${{layout:'📐 LAYOUT',regras:'⚙️ REGRAS',acoes:'🚀 AÇÕES'}[tab]}
+                        </button>
+                    `).join('')}
+                </div>
+
+                <!-- Conteúdo da tab ativa -->
+                <div id="cb-tab-content"></div>
+            </div>`;
+
+            // Bind: nome do template
+            document.getElementById('cb-tpl-nome').oninput = (e) => { tpl.nome = e.target.value; };
+
+            // Bind: salvar
+            document.getElementById('cb-btn-salvar').onclick = async () => {
+                tpl.nome = document.getElementById('cb-tpl-nome').value.trim() || tpl.nome;
+                const btn = document.getElementById('cb-btn-salvar');
+                btn.innerText = 'SALVANDO...'; btn.disabled = true;
+                const res = await apiC('save_template', {template_json: JSON.stringify(tpl)});
+                btn.innerText = 'SALVAR'; btn.disabled = false;
+                if (!res || !res.ok) { window.showToast('Erro ao salvar: ' + (res&&res.err?res.err:'desconhecido')); return; }
+                tpl.id = res.id || tpl.id;
+                window.showToast('Template salvo!');
+                await loadLista();
+            };
+
+            // Bind: duplicar
+            document.getElementById('cb-btn-duplicar').onclick = async () => {
+                const copia = JSON.parse(JSON.stringify(tpl));
+                copia.id   = 'tpl_' + Date.now();
+                copia.nome = (tpl.nome || 'Template') + ' (cópia)';
+                const res = await apiC('save_template', {template_json: JSON.stringify(copia)});
+                if (!res || !res.ok) { window.showToast('Erro ao duplicar.'); return; }
+                tpl = copia;
+                window.showToast('Template duplicado!');
+                await loadLista();
+                renderEditor();
+            };
+
+            // Bind: excluir
+            document.getElementById('cb-btn-deletar').onclick = async () => {
+                if (!confirm(`Excluir template "${tpl.nome}"?`)) return;
+                await apiC('delete_template', {id: tpl.id});
+                tpl = null;
+                window.showToast('Template excluído.');
+                await loadLista();
+                document.getElementById('cb-editor').innerHTML = `<div style="display:flex;align-items:center;justify-content:center;min-height:400px;color:#475569;font-weight:700;font-size:13px;">Selecione ou crie um template.</div>`;
+            };
+
+            // Bind: tabs
+            ['layout','regras','acoes'].forEach(tab => {
+                const btn = document.getElementById('cb-tab-' + tab);
+                if (btn) btn.onclick = () => { activeTab = tab; renderEditor(); };
+            });
+
+            renderTabContent();
+        };
+
+        // ── Conteúdo de cada tab ─────────────────────────────────────────────────
+        const renderTabContent = () => {
+            const el = document.getElementById('cb-tab-content');
+            if (!el || !tpl) return;
+            if (activeTab === 'layout')  renderTabLayout(el);
+            if (activeTab === 'regras')  renderTabRegras(el);
+            if (activeTab === 'acoes')   renderTabAcoes(el);
+        };
+
+        // ════════════════════════════════════════════════════════════════════════
+        // TAB: LAYOUT
+        // ════════════════════════════════════════════════════════════════════════
+        const renderTabLayout = (el) => {
+            const cfg = tpl.config || {};
+
+            el.innerHTML = `
+            <!-- Nome da aba + config geral -->
+            <div class="glass-card" style="padding:18px 20px;margin-bottom:14px;">
+                <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.14em;margin-bottom:14px;">Configuração Geral</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;align-items:end;">
+                    <div style="grid-column:span 2;">
+                        <label style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:5px;">Nome da Aba (destino)</label>
+                        <input id="cfg-nomeAba" class="glass-input" value="${esc(cfg.nomeAba||'')}" placeholder="Ex.: MAPA INDIVIDUALIZADO VIGÊNCIA 1/2026">
+                    </div>
+                    <div>
+                        <label style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:5px;">Altura cab. colunas (px)</label>
+                        <input id="cfg-altCab" type="number" class="glass-input" value="${cfg.alturaLinhaCabecalho||46}" min="18" max="120">
+                    </div>
+                    <div>
+                        <label style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:5px;">Altura linhas dados (px)</label>
+                        <input id="cfg-altDados" type="number" class="glass-input" value="${cfg.alturaLinhasDados||21}" min="14" max="80">
+                    </div>
+                    <div>
+                        <label style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:5px;">Congelar N linhas</label>
+                        <input id="cfg-freeze" type="number" class="glass-input" value="${cfg.congelarLinhas||4}" min="0" max="20">
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;padding-top:20px;">
+                        <input type="checkbox" id="cfg-bordas" ${cfg.bordas!==false?'checked':''}>
+                        <label for="cfg-bordas" style="font-size:10px;font-weight:700;color:#94a3b8;cursor:pointer;">Bordas</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Faixas superiores -->
+            <div class="glass-card" style="padding:18px 20px;margin-bottom:14px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+                    <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.14em;">Faixas do Cabeçalho</div>
+                    <button id="btn-add-faixa" class="btn-glass" style="font-size:10px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;">+ FAIXA</button>
+                </div>
+                <div id="faixas-lista"></div>
+            </div>
+
+            <!-- Blocos e colunas -->
+            <div class="glass-card" style="padding:18px 20px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+                    <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.14em;">Blocos e Colunas</div>
+                    <button id="btn-add-bloco" class="btn-glass" style="font-size:10px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;">+ BLOCO</button>
+                </div>
+                <div id="blocos-lista"></div>
+            </div>`;
+
+            // Bind config geral
+            document.getElementById('cfg-nomeAba').oninput  = (e) => { cfg.nomeAba = e.target.value; };
+            document.getElementById('cfg-altCab').oninput   = (e) => { cfg.alturaLinhaCabecalho = parseInt(e.target.value)||46; };
+            document.getElementById('cfg-altDados').oninput = (e) => { cfg.alturaLinhasDados = parseInt(e.target.value)||21; };
+            document.getElementById('cfg-freeze').oninput   = (e) => { cfg.congelarLinhas = parseInt(e.target.value)||4; };
+            document.getElementById('cfg-bordas').onchange  = (e) => { cfg.bordas = e.target.checked; };
+
+            // ── Faixas ──────────────────────────────────────────────────────────
+            const renderFaixas = () => {
+                const fl = document.getElementById('faixas-lista');
+                if (!fl) return;
+                const faixas = cfg.faixas || [];
+                if (!faixas.length) { fl.innerHTML = `<div style="font-size:11px;color:#64748b;">Nenhuma faixa. Clique em "+ FAIXA".</div>`; return; }
+                fl.innerHTML = faixas.map((f,i) => `
+                    <div style="display:grid;grid-template-columns:1fr 80px 80px 80px 30px auto;gap:8px;align-items:end;margin-bottom:10px;padding:10px;background:rgba(0,0,0,0.2);border-radius:10px;">
+                        <div>
+                            <div style="font-size:9px;font-weight:700;color:#64748b;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.1em;">Texto</div>
+                            <input class="glass-input fx-texto" data-i="${i}" value="${esc(f.texto||'')}">
+                        </div>
+                        <div>
+                            <div style="font-size:9px;font-weight:700;color:#64748b;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.1em;">Fundo</div>
+                            <input type="color" class="fx-bg" data-i="${i}" value="${f.bgColor||'#1F3864'}" style="width:100%;height:36px;border:none;border-radius:8px;cursor:pointer;background:transparent;">
+                        </div>
+                        <div>
+                            <div style="font-size:9px;font-weight:700;color:#64748b;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.1em;">Fonte</div>
+                            <input type="color" class="fx-fc" data-i="${i}" value="${f.fontColor||'#FFFFFF'}" style="width:100%;height:36px;border:none;border-radius:8px;cursor:pointer;background:transparent;">
+                        </div>
+                        <div>
+                            <div style="font-size:9px;font-weight:700;color:#64748b;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.1em;">Altura(px)</div>
+                            <input type="number" class="glass-input fx-alt" data-i="${i}" value="${f.altura||28}" min="14" max="120">
+                        </div>
+                        <div style="padding-top:20px;">
+                            <input type="checkbox" class="fx-neg" data-i="${i}" ${f.negrito!==false?'checked':''} title="Negrito">
+                        </div>
+                        <div style="display:flex;gap:4px;padding-top:16px;">
+                            <button class="btn-glass fx-up" data-i="${i}" ${i===0?'disabled':''} style="padding:5px 8px;">↑</button>
+                            <button class="btn-glass fx-dn" data-i="${i}" ${i===faixas.length-1?'disabled':''} style="padding:5px 8px;">↓</button>
+                            <button class="btn-glass fx-del" data-i="${i}" style="padding:5px 8px;color:#fca5a5;border-color:rgba(239,68,68,0.35);">✕</button>
+                        </div>
+                    </div>
+                `).join('');
+                fl.querySelectorAll('.fx-texto').forEach(el => el.oninput  = (e)=>{ cfg.faixas[+e.target.dataset.i].texto = e.target.value; });
+                fl.querySelectorAll('.fx-bg').forEach(el    => el.oninput  = (e)=>{ cfg.faixas[+e.target.dataset.i].bgColor = e.target.value; });
+                fl.querySelectorAll('.fx-fc').forEach(el    => el.oninput  = (e)=>{ cfg.faixas[+e.target.dataset.i].fontColor = e.target.value; });
+                fl.querySelectorAll('.fx-alt').forEach(el   => el.oninput  = (e)=>{ cfg.faixas[+e.target.dataset.i].altura = parseInt(e.target.value)||28; });
+                fl.querySelectorAll('.fx-neg').forEach(el   => el.onchange = (e)=>{ cfg.faixas[+e.target.dataset.i].negrito = e.target.checked; });
+                fl.querySelectorAll('.fx-up').forEach(el    => el.onclick  = (e)=>{ const i=+e.target.dataset.i; if(i>0){[cfg.faixas[i-1],cfg.faixas[i]]=[cfg.faixas[i],cfg.faixas[i-1]]; renderFaixas(); }});
+                fl.querySelectorAll('.fx-dn').forEach(el    => el.onclick  = (e)=>{ const i=+e.target.dataset.i; if(i<cfg.faixas.length-1){[cfg.faixas[i+1],cfg.faixas[i]]=[cfg.faixas[i],cfg.faixas[i+1]]; renderFaixas(); }});
+                fl.querySelectorAll('.fx-del').forEach(el   => el.onclick  = (e)=>{ cfg.faixas.splice(+e.target.dataset.i,1); renderFaixas(); });
+            };
+            document.getElementById('btn-add-faixa').onclick = () => {
+                if (!cfg.faixas) cfg.faixas = [];
+                cfg.faixas.push({texto:'Nova Faixa', bgColor:'#1F3864', fontColor:'#FFFFFF', negrito:true, altura:28});
+                renderFaixas();
+            };
+            renderFaixas();
+
+            // ── Blocos ──────────────────────────────────────────────────────────
+            const renderBlocos = () => {
+                const bl = document.getElementById('blocos-lista');
+                if (!bl) return;
+                const blocos = cfg.blocos || [];
+                if (!blocos.length) { bl.innerHTML = `<div style="font-size:11px;color:#64748b;">Nenhum bloco. Clique em "+ BLOCO".</div>`; return; }
+                bl.innerHTML = blocos.map((b,bi) => `
+                    <div style="border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:14px;margin-bottom:12px;background:rgba(0,0,0,0.15);">
+                        <!-- Header do bloco -->
+                        <div style="display:grid;grid-template-columns:1fr 80px 80px auto;gap:8px;align-items:end;margin-bottom:12px;">
+                            <div>
+                                <div style="font-size:9px;font-weight:700;color:#64748b;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.1em;">Título do Bloco</div>
+                                <input class="glass-input bl-titulo" data-bi="${bi}" value="${esc(b.titulo||'')}">
+                            </div>
+                            <div>
+                                <div style="font-size:9px;font-weight:700;color:#64748b;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.1em;">Fundo</div>
+                                <input type="color" class="bl-bg" data-bi="${bi}" value="${b.bgColor||'#4472C4'}" style="width:100%;height:36px;border:none;border-radius:8px;cursor:pointer;background:transparent;">
+                            </div>
+                            <div>
+                                <div style="font-size:9px;font-weight:700;color:#64748b;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.1em;">Fonte</div>
+                                <input type="color" class="bl-fc" data-bi="${bi}" value="${b.fontColor||'#FFFFFF'}" style="width:100%;height:36px;border:none;border-radius:8px;cursor:pointer;background:transparent;">
+                            </div>
+                            <div style="display:flex;gap:4px;padding-top:16px;">
+                                <button class="btn-glass bl-up"  data-bi="${bi}" ${bi===0?'disabled':''} style="padding:5px 8px;">↑</button>
+                                <button class="btn-glass bl-dn"  data-bi="${bi}" ${bi===blocos.length-1?'disabled':''} style="padding:5px 8px;">↓</button>
+                                <button class="btn-glass bl-del" data-bi="${bi}" style="padding:5px 8px;color:#fca5a5;border-color:rgba(239,68,68,0.35);">✕</button>
+                            </div>
+                        </div>
+
+                        <!-- Colunas do bloco -->
+                        <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:8px;">Colunas do Bloco</div>
+                        <div class="bl-cols-lista" data-bi="${bi}">
+                        ${(b.colunas||[]).map((col,ci) => `
+                            <div style="display:grid;grid-template-columns:40px 1fr 1fr 80px auto;gap:6px;align-items:end;margin-bottom:6px;">
+                                <div style="font-size:9px;font-weight:700;color:#475569;text-align:center;padding-top:16px;">#${ci+1}</div>
+                                <div>
+                                    ${ci===0?'<div style="font-size:9px;font-weight:700;color:#64748b;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.1em;">ID (canônico)</div>':''}
+                                    <input class="glass-input col-id" data-bi="${bi}" data-ci="${ci}" value="${esc(col.id||'')}">
+                                </div>
+                                <div>
+                                    ${ci===0?'<div style="font-size:9px;font-weight:700;color:#64748b;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.1em;">Título (visível)</div>':''}
+                                    <input class="glass-input col-tit" data-bi="${bi}" data-ci="${ci}" value="${esc(col.titulo||'')}">
+                                </div>
+                                <div>
+                                    ${ci===0?'<div style="font-size:9px;font-weight:700;color:#64748b;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.1em;">Largura(px)</div>':''}
+                                    <input type="number" class="glass-input col-larg" data-bi="${bi}" data-ci="${ci}" value="${col.largura||100}" min="30" max="500">
+                                </div>
+                                <div style="display:flex;gap:4px;${ci===0?'padding-top:16px;':''}">
+                                    <button class="btn-glass col-up"  data-bi="${bi}" data-ci="${ci}" ${ci===0?'disabled':''} style="padding:4px 7px;">↑</button>
+                                    <button class="btn-glass col-dn"  data-bi="${bi}" data-ci="${ci}" ${ci===(b.colunas||[]).length-1?'disabled':''} style="padding:4px 7px;">↓</button>
+                                    <button class="btn-glass col-del" data-bi="${bi}" data-ci="${ci}" style="padding:4px 7px;color:#fca5a5;border-color:rgba(239,68,68,0.35);">✕</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                        </div>
+                        <button class="btn-glass bl-add-col" data-bi="${bi}" style="width:100%;margin-top:8px;font-size:10px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;">+ COLUNA</button>
+                    </div>
+                `).join('');
+
+                // Bind: títulos e cores de bloco
+                bl.querySelectorAll('.bl-titulo').forEach(el => el.oninput = (e)=>{ cfg.blocos[+e.target.dataset.bi].titulo = e.target.value; });
+                bl.querySelectorAll('.bl-bg').forEach(el    => el.oninput = (e)=>{ cfg.blocos[+e.target.dataset.bi].bgColor = e.target.value; });
+                bl.querySelectorAll('.bl-fc').forEach(el    => el.oninput = (e)=>{ cfg.blocos[+e.target.dataset.bi].fontColor = e.target.value; });
+
+                // Bind: mover/excluir bloco
+                bl.querySelectorAll('.bl-up').forEach(el => el.onclick = (e)=>{ const bi=+e.target.dataset.bi; if(bi>0){[cfg.blocos[bi-1],cfg.blocos[bi]]=[cfg.blocos[bi],cfg.blocos[bi-1]]; renderBlocos(); }});
+                bl.querySelectorAll('.bl-dn').forEach(el => el.onclick = (e)=>{ const bi=+e.target.dataset.bi; if(bi<cfg.blocos.length-1){[cfg.blocos[bi+1],cfg.blocos[bi]]=[cfg.blocos[bi],cfg.blocos[bi+1]]; renderBlocos(); }});
+                bl.querySelectorAll('.bl-del').forEach(el => el.onclick = (e)=>{ cfg.blocos.splice(+e.target.dataset.bi,1); renderBlocos(); });
+
+                // Bind: colunas
+                bl.querySelectorAll('.col-id').forEach(el  => el.oninput = (e)=>{ cfg.blocos[+e.target.dataset.bi].colunas[+e.target.dataset.ci].id = e.target.value; });
+                bl.querySelectorAll('.col-tit').forEach(el => el.oninput = (e)=>{ cfg.blocos[+e.target.dataset.bi].colunas[+e.target.dataset.ci].titulo = e.target.value; });
+                bl.querySelectorAll('.col-larg').forEach(el=> el.oninput = (e)=>{ cfg.blocos[+e.target.dataset.bi].colunas[+e.target.dataset.ci].largura = parseInt(e.target.value)||100; });
+                bl.querySelectorAll('.col-up').forEach(el  => el.onclick = (e)=>{ const bi=+e.target.dataset.bi,ci=+e.target.dataset.ci; if(ci>0){const cols=cfg.blocos[bi].colunas;[cols[ci-1],cols[ci]]=[cols[ci],cols[ci-1]]; renderBlocos(); }});
+                bl.querySelectorAll('.col-dn').forEach(el  => el.onclick = (e)=>{ const bi=+e.target.dataset.bi,ci=+e.target.dataset.ci; const cols=cfg.blocos[bi].colunas; if(ci<cols.length-1){[cols[ci+1],cols[ci]]=[cols[ci],cols[ci+1]]; renderBlocos(); }});
+                bl.querySelectorAll('.col-del').forEach(el => el.onclick = (e)=>{ cfg.blocos[+e.target.dataset.bi].colunas.splice(+e.target.dataset.ci,1); renderBlocos(); });
+                bl.querySelectorAll('.bl-add-col').forEach(el => el.onclick = (e)=>{ const bi=+e.target.dataset.bi; if(!cfg.blocos[bi].colunas) cfg.blocos[bi].colunas=[]; cfg.blocos[bi].colunas.push({id:'col_'+Date.now(),titulo:'Nova Coluna',largura:100}); renderBlocos(); });
+            };
+
+            document.getElementById('btn-add-bloco').onclick = () => {
+                if (!cfg.blocos) cfg.blocos = [];
+                cfg.blocos.push({id:'bloco_'+Date.now(), titulo:'Novo Bloco', bgColor:'#4472C4', fontColor:'#FFFFFF', colunas:[{id:'col_'+Date.now(),titulo:'Coluna 1',largura:100}]});
+                renderBlocos();
+            };
+            renderBlocos();
+        };
+
+        // ════════════════════════════════════════════════════════════════════════
+        // TAB: REGRAS
+        // ════════════════════════════════════════════════════════════════════════
+        const renderTabRegras = (el) => {
+            el.innerHTML = `
+            <!-- Validação de dados -->
+            <div class="glass-card" style="padding:18px 20px;margin-bottom:14px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+                    <div>
+                        <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.14em;">Validação de Dados (Dropdowns)</div>
+                        <div style="font-size:10px;color:#64748b;margin-top:3px;">Cada regra restringe a entrada de uma coluna a uma lista de valores.</div>
+                    </div>
+                    <button id="btn-add-val" class="btn-glass" style="font-size:10px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;flex-shrink:0;">+ REGRA</button>
+                </div>
+                <div id="val-lista"></div>
+            </div>
+
+            <!-- Formatação condicional -->
+            <div class="glass-card" style="padding:18px 20px;margin-bottom:14px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+                    <div>
+                        <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.14em;">Formatação Condicional</div>
+                        <div style="font-size:10px;color:#64748b;margin-top:3px;">Use fórmulas do Sheets (ex.: <code style="background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px;">EXATO($A2,"SIM")</code>).</div>
+                    </div>
+                    <button id="btn-add-cf" class="btn-glass" style="font-size:10px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;flex-shrink:0;">+ REGRA</button>
+                </div>
+                <div id="cf-lista"></div>
+            </div>
+
+            <!-- Proteções -->
+            <div class="glass-card" style="padding:18px 20px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+                    <div>
+                        <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.14em;">Proteções de Coluna</div>
+                        <div style="font-size:10px;color:#64748b;margin-top:3px;">Defina IDs de colunas separados por vírgula (ex.: <code style="background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px;">nis,cns,nome</code>).</div>
+                    </div>
+                    <button id="btn-add-prot" class="btn-glass" style="font-size:10px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;flex-shrink:0;">+ PROTEÇÃO</button>
+                </div>
+                <div id="prot-lista"></div>
+            </div>`;
+
+            // ── Validações ────────────────────────────────────────────────────────
+            const renderVal = () => {
+                const vl = document.getElementById('val-lista');
+                if (!vl) return;
+                const regras = tpl.regrasValidacao || [];
+                if (!regras.length) { vl.innerHTML = `<div style="font-size:11px;color:#64748b;">Nenhuma regra.</div>`; return; }
+                vl.innerHTML = regras.map((r,i) => `
+                    <div style="display:grid;grid-template-columns:1fr 2fr auto;gap:8px;align-items:center;margin-bottom:8px;">
+                        <input class="glass-input v-colid" data-i="${i}" value="${esc(r.colId||'')}" placeholder="ID da coluna (ex.: acomp_us)">
+                        <input class="glass-input v-vals"  data-i="${i}" value="${esc((r.valores||[]).join(', '))}" placeholder="Valores separados por vírgula">
+                        <button class="btn-glass v-del" data-i="${i}" style="padding:5px 10px;color:#fca5a5;border-color:rgba(239,68,68,0.35);">✕</button>
+                    </div>
+                `).join('');
+                vl.querySelectorAll('.v-colid').forEach(el => el.oninput = (e)=>{ tpl.regrasValidacao[+e.target.dataset.i].colId = e.target.value.trim(); });
+                vl.querySelectorAll('.v-vals').forEach(el  => el.oninput = (e)=>{ tpl.regrasValidacao[+e.target.dataset.i].valores = e.target.value.split(',').map(v=>v.trim()).filter(Boolean); });
+                vl.querySelectorAll('.v-del').forEach(el   => el.onclick = (e)=>{ tpl.regrasValidacao.splice(+e.target.dataset.i,1); renderVal(); });
+            };
+            document.getElementById('btn-add-val').onclick = () => {
+                if (!tpl.regrasValidacao) tpl.regrasValidacao = [];
+                tpl.regrasValidacao.push({colId:'', tipo:'lista', valores:[]});
+                renderVal();
+            };
+            renderVal();
+
+            // ── Formatação condicional ────────────────────────────────────────────
+            const renderCF = () => {
+                const cfl = document.getElementById('cf-lista');
+                if (!cfl) return;
+                const regras = tpl.formatacaoCondicional || [];
+                if (!regras.length) { cfl.innerHTML = `<div style="font-size:11px;color:#64748b;">Nenhuma regra.</div>`; return; }
+                cfl.innerHTML = regras.map((r,i) => `
+                    <div style="display:grid;grid-template-columns:2fr 70px 70px 1fr auto;gap:8px;align-items:center;margin-bottom:8px;">
+                        <input class="glass-input cf-form" data-i="${i}" value="${esc(r.formula||'')}" placeholder='Fórmula (ex.: EXATO($A2,"SIM"))'>
+                        <input type="color" class="cf-bg"   data-i="${i}" value="${r.bgColor||'#FFFF00'}"   title="Cor de fundo"  style="height:36px;width:100%;border:none;border-radius:8px;cursor:pointer;background:transparent;">
+                        <input type="color" class="cf-fc"   data-i="${i}" value="${r.fontColor||'#000000'}" title="Cor da fonte" style="height:36px;width:100%;border:none;border-radius:8px;cursor:pointer;background:transparent;">
+                        <input class="glass-input cf-desc" data-i="${i}" value="${esc(r.descricao||'')}" placeholder="Descrição (opcional)">
+                        <button class="btn-glass cf-del" data-i="${i}" style="padding:5px 10px;color:#fca5a5;border-color:rgba(239,68,68,0.35);">✕</button>
+                    </div>
+                `).join('');
+                cfl.querySelectorAll('.cf-form').forEach(el => el.oninput = (e)=>{ tpl.formatacaoCondicional[+e.target.dataset.i].formula = e.target.value; });
+                cfl.querySelectorAll('.cf-bg').forEach(el   => el.oninput = (e)=>{ tpl.formatacaoCondicional[+e.target.dataset.i].bgColor = e.target.value; });
+                cfl.querySelectorAll('.cf-fc').forEach(el   => el.oninput = (e)=>{ tpl.formatacaoCondicional[+e.target.dataset.i].fontColor = e.target.value; });
+                cfl.querySelectorAll('.cf-desc').forEach(el => el.oninput = (e)=>{ tpl.formatacaoCondicional[+e.target.dataset.i].descricao = e.target.value; });
+                cfl.querySelectorAll('.cf-del').forEach(el  => el.onclick = (e)=>{ tpl.formatacaoCondicional.splice(+e.target.dataset.i,1); renderCF(); });
+            };
+            document.getElementById('btn-add-cf').onclick = () => {
+                if (!tpl.formatacaoCondicional) tpl.formatacaoCondicional = [];
+                tpl.formatacaoCondicional.push({formula:'', bgColor:'#FFFF00', fontColor:'#000000', descricao:''});
+                renderCF();
+            };
+            renderCF();
+
+            // ── Proteções ─────────────────────────────────────────────────────────
+            const renderProt = () => {
+                const pl = document.getElementById('prot-lista');
+                if (!pl) return;
+                const prots = tpl.protecoes || [];
+                if (!prots.length) { pl.innerHTML = `<div style="font-size:11px;color:#64748b;">Nenhuma proteção.</div>`; return; }
+                pl.innerHTML = prots.map((p,i) => `
+                    <div style="display:grid;grid-template-columns:1fr 2fr auto;gap:8px;align-items:center;margin-bottom:8px;">
+                        <input class="glass-input pt-cols" data-i="${i}" value="${esc((p.colIds||[]).join(', '))}" placeholder="IDs das colunas (ex.: nis, nome)">
+                        <input class="glass-input pt-desc" data-i="${i}" value="${esc(p.descricao||'')}" placeholder="Descrição da proteção">
+                        <button class="btn-glass pt-del" data-i="${i}" style="padding:5px 10px;color:#fca5a5;border-color:rgba(239,68,68,0.35);">✕</button>
+                    </div>
+                `).join('');
+                pl.querySelectorAll('.pt-cols').forEach(el => el.oninput = (e)=>{ tpl.protecoes[+e.target.dataset.i].colIds = e.target.value.split(',').map(v=>v.trim()).filter(Boolean); });
+                pl.querySelectorAll('.pt-desc').forEach(el => el.oninput = (e)=>{ tpl.protecoes[+e.target.dataset.i].descricao = e.target.value; });
+                pl.querySelectorAll('.pt-del').forEach(el  => el.onclick = (e)=>{ tpl.protecoes.splice(+e.target.dataset.i,1); renderProt(); });
+            };
+            document.getElementById('btn-add-prot').onclick = () => {
+                if (!tpl.protecoes) tpl.protecoes = [];
+                tpl.protecoes.push({tipo:'coluna', colIds:[], descricao:''});
+                renderProt();
+            };
+            renderProt();
+        };
+
+        // ════════════════════════════════════════════════════════════════════════
+        // TAB: AÇÕES
+        // ════════════════════════════════════════════════════════════════════════
+        const renderTabAcoes = (el) => {
+            const totalCols = (tpl.config&&tpl.config.blocos||[]).reduce((s,b)=>s+(b.colunas||[]).length,0);
+            const numBlocos = (tpl.config&&tpl.config.blocos||[]).length;
+            const numFaixas = (tpl.config&&tpl.config.faixas||[]).length;
+            const numVal    = (tpl.regrasValidacao||[]).length;
+            const numCF     = (tpl.formatacaoCondicional||[]).length;
+            const numProt   = (tpl.protecoes||[]).length;
+
+            el.innerHTML = `
+            <!-- Prévia do template -->
+            <div class="glass-card" style="padding:18px 20px;margin-bottom:14px;">
+                <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.14em;margin-bottom:14px;">Pré-Visualização da Estrutura</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+                    <div class="glass-card" style="padding:10px 14px;margin:0;text-align:center;min-width:100px;">
+                        <div style="font-size:22px;font-weight:900;color:#818cf8;">${numFaixas}</div>
+                        <div style="font-size:9px;color:#475569;text-transform:uppercase;letter-spacing:0.1em;margin-top:3px;">Faixas</div>
+                    </div>
+                    <div class="glass-card" style="padding:10px 14px;margin:0;text-align:center;min-width:100px;">
+                        <div style="font-size:22px;font-weight:900;color:#818cf8;">${numBlocos}</div>
+                        <div style="font-size:9px;color:#475569;text-transform:uppercase;letter-spacing:0.1em;margin-top:3px;">Blocos</div>
+                    </div>
+                    <div class="glass-card" style="padding:10px 14px;margin:0;text-align:center;min-width:100px;">
+                        <div style="font-size:22px;font-weight:900;color:#818cf8;">${totalCols}</div>
+                        <div style="font-size:9px;color:#475569;text-transform:uppercase;letter-spacing:0.1em;margin-top:3px;">Colunas</div>
+                    </div>
+                    <div class="glass-card" style="padding:10px 14px;margin:0;text-align:center;min-width:100px;">
+                        <div style="font-size:22px;font-weight:900;color:#34d399;">${numVal}</div>
+                        <div style="font-size:9px;color:#475569;text-transform:uppercase;letter-spacing:0.1em;margin-top:3px;">Validações</div>
+                    </div>
+                    <div class="glass-card" style="padding:10px 14px;margin:0;text-align:center;min-width:100px;">
+                        <div style="font-size:22px;font-weight:900;color:#fbbf24;">${numCF}</div>
+                        <div style="font-size:9px;color:#475569;text-transform:uppercase;letter-spacing:0.1em;margin-top:3px;">Cond. Formatos</div>
+                    </div>
+                    <div class="glass-card" style="padding:10px 14px;margin:0;text-align:center;min-width:100px;">
+                        <div style="font-size:22px;font-weight:900;color:#f87171;">${numProt}</div>
+                        <div style="font-size:9px;color:#475569;text-transform:uppercase;letter-spacing:0.1em;margin-top:3px;">Proteções</div>
+                    </div>
+                </div>
+
+                <!-- Preview visual mini dos blocos -->
+                <div style="overflow-x:auto;padding-bottom:4px;">
+                    <div style="display:inline-flex;gap:0;border:1px solid rgba(255,255,255,0.1);border-radius:8px;overflow:hidden;min-width:100%;">
+                        ${(tpl.config&&tpl.config.blocos||[]).map(b=>`
+                            <div style="flex-shrink:0;padding:6px 10px;background:${esc(b.bgColor||'#4472C4')}22;border-right:1px solid rgba(255,255,255,0.07);text-align:center;">
+                                <div style="font-size:9px;font-weight:800;color:${esc(b.bgColor||'#4472C4')};text-transform:uppercase;white-space:nowrap;">${esc(b.titulo||'')}</div>
+                                <div style="font-size:8px;color:#64748b;margin-top:3px;">${(b.colunas||[]).length} col.</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Criar nova planilha -->
+            <div class="glass-card" style="padding:18px 20px;margin-bottom:14px;border:1px solid rgba(16,185,129,0.2);background:rgba(16,185,129,0.03);">
+                <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.14em;margin-bottom:14px;">🆕 Criar Nova Planilha Google Sheets</div>
+                <div style="display:grid;grid-template-columns:1fr auto;gap:12px;align-items:end;">
+                    <div>
+                        <label style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:5px;">Nome da Nova Aba (deixe em branco para usar o nome configurado no layout)</label>
+                        <input id="acao-nome-nova" class="glass-input" placeholder="${esc(tpl.config&&tpl.config.nomeAba||'MAPA INDIVIDUALIZADO')}">
+                    </div>
+                    <button id="btn-criar-nova" style="background:linear-gradient(135deg,rgba(16,185,129,0.15),rgba(16,185,129,0.08));border:1px solid rgba(16,185,129,0.35);color:#34d399;font-weight:800;padding:12px 18px;border-radius:12px;cursor:pointer;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;white-space:nowrap;display:flex;align-items:center;gap:7px;">
+                        <span class="material-symbols-rounded" style="font-size:17px;">add_chart</span> CRIAR PLANILHA
+                    </button>
+                </div>
+                <div id="acao-nova-result" style="margin-top:10px;font-size:11px;color:#64748b;"></div>
+            </div>
+
+            <!-- Aplicar em aba existente -->
+            <div class="glass-card" style="padding:18px 20px;margin-bottom:14px;border:1px solid rgba(245,158,11,0.2);background:rgba(245,158,11,0.03);">
+                <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.14em;margin-bottom:4px;">⚡ Aplicar Template em Planilha Existente</div>
+                <div style="font-size:10px;color:#fbbf24;margin-bottom:14px;font-weight:700;">⚠️ Atenção: isso irá SUBSTITUIR o conteúdo, formato, validações e proteções da aba de destino.</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end;">
+                    <div>
+                        <label style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:5px;">ID ou URL da Planilha de Destino</label>
+                        <input id="acao-ss-id" class="glass-input" placeholder="Cole o link ou ID da planilha aqui">
+                    </div>
+                    <div>
+                        <label style="font-size:9px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;display:block;margin-bottom:5px;">Nome da Aba (deixe em branco para usar o padrão)</label>
+                        <input id="acao-nome-aba" class="glass-input" placeholder="${esc(tpl.config&&tpl.config.nomeAba||'')}">
+                    </div>
+                    <button id="btn-aplicar-existente" style="background:linear-gradient(135deg,rgba(245,158,11,0.15),rgba(245,158,11,0.06));border:1px solid rgba(245,158,11,0.35);color:#fbbf24;font-weight:800;padding:12px 18px;border-radius:12px;cursor:pointer;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;white-space:nowrap;display:flex;align-items:center;gap:7px;">
+                        <span class="material-symbols-rounded" style="font-size:17px;">drive_file_move</span> APLICAR
+                    </button>
+                </div>
+                <div id="acao-exist-result" style="margin-top:10px;font-size:11px;color:#64748b;"></div>
+            </div>
+
+            <!-- Exportar / Importar JSON -->
+            <div class="glass-card" style="padding:18px 20px;">
+                <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.14em;margin-bottom:14px;">📋 Exportar / Importar Configuração (JSON)</div>
+                <textarea id="acao-json" style="width:100%;min-height:120px;background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:10px;font-size:11px;color:#e2e8f0;font-family:monospace;resize:vertical;">${esc(JSON.stringify(tpl, null, 2))}</textarea>
+                <div style="display:flex;gap:8px;margin-top:8px;">
+                    <button id="btn-copy-json" class="btn-glass" style="font-size:10px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;display:flex;align-items:center;gap:6px;">
+                        <span class="material-symbols-rounded" style="font-size:15px;">content_copy</span> COPIAR JSON
+                    </button>
+                    <button id="btn-import-json" class="btn-glass" style="font-size:10px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;display:flex;align-items:center;gap:6px;">
+                        <span class="material-symbols-rounded" style="font-size:15px;">upload</span> IMPORTAR DO JSON
+                    </button>
+                </div>
+            </div>`;
+
+            // Bind: criar nova planilha
+            document.getElementById('btn-criar-nova').onclick = async () => {
+                const btn = document.getElementById('btn-criar-nova');
+                const resEl = document.getElementById('acao-nova-result');
+                const nomeAba = document.getElementById('acao-nome-nova').value.trim() || null;
+                btn.innerText = 'CRIANDO...'; btn.disabled = true;
+                resEl.style.color = '#94a3b8';
+                resEl.innerText = 'Aguarde, criando planilha no Google Drive...';
+                const res = await apiC('create_sheet_from_template', {
+                    template_json: JSON.stringify(tpl),
+                    nome_aba: nomeAba || ''
+                });
+                btn.disabled = false;
+                btn.innerHTML = '<span class="material-symbols-rounded" style="font-size:17px;">add_chart</span> CRIAR PLANILHA';
+                if (!res || !res.ok) {
+                    resEl.style.color = '#f87171';
+                    resEl.innerText = '❌ Erro: ' + (res&&res.err ? res.err : 'desconhecido');
+                    return;
+                }
+                resEl.style.color = '#34d399';
+                resEl.innerHTML = `✅ Planilha criada com sucesso! <a href="${esc(res.data&&res.data.spreadsheetUrl||'')}" target="_blank" style="color:#818cf8;font-weight:800;">Abrir no Drive ↗</a>`;
+                window.showToast('Planilha criada!');
+            };
+
+            // Bind: aplicar em existente
+            document.getElementById('btn-aplicar-existente').onclick = async () => {
+                const btn = document.getElementById('btn-aplicar-existente');
+                const resEl = document.getElementById('acao-exist-result');
+                const ssRaw = document.getElementById('acao-ss-id').value.trim();
+                const nomeAba = document.getElementById('acao-nome-aba').value.trim() || null;
+                if (!ssRaw) { window.showToast('Informe o ID/URL da planilha de destino.'); return; }
+                // Extrai ID do link
+                const ssMatch = ssRaw.match(/[-\w]{25,}/);
+                const ssId = ssMatch ? ssMatch[0] : ssRaw;
+                if (!confirm('⚠️ Aplicar template na planilha "' + ssId + '"? O conteúdo da aba será substituído.')) return;
+                btn.innerText = 'APLICANDO...'; btn.disabled = true;
+                resEl.style.color = '#94a3b8';
+                resEl.innerText = 'Aguarde, aplicando layout na planilha...';
+                const res = await apiC('create_sheet_from_template', {
+                    template_json: JSON.stringify(tpl),
+                    spreadsheet_id: ssId,
+                    nome_aba: nomeAba || ''
+                });
+                btn.disabled = false;
+                btn.innerHTML = '<span class="material-symbols-rounded" style="font-size:17px;">drive_file_move</span> APLICAR';
+                if (!res || !res.ok) {
+                    resEl.style.color = '#f87171';
+                    resEl.innerText = '❌ Erro: ' + (res&&res.err ? res.err : 'desconhecido');
+                    return;
+                }
+                resEl.style.color = '#34d399';
+                resEl.innerHTML = `✅ Template aplicado! <a href="${esc(res.data&&res.data.spreadsheetUrl||'')}" target="_blank" style="color:#818cf8;font-weight:800;">Abrir planilha ↗</a>`;
+                window.showToast('Template aplicado com sucesso!');
+            };
+
+            // Bind: copiar JSON
+            document.getElementById('btn-copy-json').onclick = () => {
+                const txt = JSON.stringify(tpl, null, 2);
+                navigator.clipboard.writeText(txt).then(() => window.showToast('JSON copiado!'));
+            };
+
+            // Bind: importar JSON
+            document.getElementById('btn-import-json').onclick = () => {
+                try {
+                    const raw = document.getElementById('acao-json').value;
+                    const parsed = JSON.parse(raw);
+                    if (!parsed.config) { window.showToast('JSON inválido: falta "config".'); return; }
+                    if (!confirm('Substituir template atual pelo JSON colado? Salve antes para não perder alterações.')) return;
+                    tpl = parsed;
+                    renderEditor();
+                    window.showToast('Template importado!');
+                } catch(e) {
+                    window.showToast('JSON inválido: ' + e.message);
+                }
+            };
+        };
+
+        // ── Carregar lista de templates ──────────────────────────────────────────
+        const loadLista = async () => {
+            const res = await apiC('list_templates');
+            templatesList = (res && res.ok && Array.isArray(res.data)) ? res.data : [];
+            renderLista();
+        };
+
+        // ── Botão: Novo template ─────────────────────────────────────────────────
+        document.getElementById('cb-btn-novo').onclick = async () => {
+            const t = await clonePadrao();
+            if (!t) return;
+            tpl = t;
+            renderLista();
+            renderEditor();
+        };
+
+        // ── Botão: Carregar modelo padrão ────────────────────────────────────────
+        document.getElementById('cb-btn-padrao').onclick = async () => {
+            const res = await apiC('get_template', {id:'__padrao__'});
+            if (!res || !res.ok) { window.showToast('Erro ao carregar modelo padrão.'); return; }
+            tpl = JSON.parse(JSON.stringify(res.data));
+            tpl.id   = 'tpl_copia_padrao_' + Date.now();
+            tpl.nome = 'Modelo Padrão (cópia)';
+            renderLista();
+            renderEditor();
+            window.showToast('Modelo padrão carregado. Clique em SALVAR para guardar.');
+        };
+
+        // Carga inicial
+        loadLista();
+    }
+
+
 
 })();
