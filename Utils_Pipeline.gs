@@ -85,6 +85,7 @@ function clearAllPipelineCheckpoints() {
   clearCheckpoint(keys.criar);
   clearCheckpoint(keys.distribuir);
   clearCheckpoint(keys.validacoes);
+  clearCheckpoint(keys.ingestao);
   logPadrao('UTILS', 'Todos os checkpoints do pipeline foram removidos.');
 }
 
@@ -97,7 +98,8 @@ function getPipelineStatus() {
   const cp = {
     criar:      loadCheckpoint(keys.criar),
     distribuir: loadCheckpoint(keys.distribuir),
-    validacoes: loadCheckpoint(keys.validacoes)
+    validacoes: loadCheckpoint(keys.validacoes),
+    ingestao:   loadCheckpoint(keys.ingestao)
   };
   return {
     criar: cp.criar
@@ -108,7 +110,10 @@ function getPipelineStatus() {
       : { fase: 'NAO_INICIADO', progresso: '0/0' },
     validacoes: cp.validacoes
       ? { fase: cp.validacoes.fase, progresso: cp.validacoes.indice + '/' + (cp.validacoes.lista || []).length }
-      : { fase: 'NAO_INICIADO', progresso: '0/0' }
+      : { fase: 'NAO_INICIADO', progresso: '0/0' },
+    ingestao: cp.ingestao
+      ? { ts: cp.ingestao.ts, unidades: cp.ingestao.unidades || 0, pacientes: cp.ingestao.pacientes || 0 }
+      : null
   };
 }
 

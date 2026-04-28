@@ -106,6 +106,18 @@ const CONFIG_PIPELINE = {
   checkpointKeys: {
     criar:      'PIPELINE_CRIAR_CPK',
     distribuir: 'PIPELINE_DISTRIBUIR_CPK',
-    validacoes: 'PIPELINE_VALIDACOES_CPK'
+    validacoes: 'PIPELINE_VALIDACOES_CPK',
+    ingestao:   'PIPELINE_INGEST_CPK'
+  },
+
+  // ── Ingestão de Mapas ─────────────────────────────────────────────────────
+  // Parâmetros usados pelo módulo IngestaoMapas.gs e pelo Painel Web para
+  // receber e processar os arquivos .xls (HTML) baixados do BFA.
+  ingestao: {
+    // Tamanho máximo por arquivo em bytes (padrão: 10 MB).
+    maxFileSizeBytes: 10485760,
+
+    // Extensões de arquivo aceitas pelo painel (em minúsculas, com ponto).
+    extensoesPermitidas: ['.xls', '.html', '.htm']
   }
 };

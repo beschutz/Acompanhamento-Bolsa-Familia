@@ -2300,7 +2300,42 @@ renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
         <div class="animate-fade" style="max-width:860px;margin:0 auto;">
             <div style="margin-bottom:28px;border-bottom:1px solid rgba(255,255,255,0.05);padding-bottom:18px;">
                 <h2 style="font-size:26px;font-weight:900;color:white;letter-spacing:-0.5px;font-style:italic;text-transform:uppercase;margin:0;">Pipeline Unidades</h2>
-                <p style="font-size:12px;color:#475569;margin-top:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Criar • Distribuir • Corrigir Validações</p>
+                <p style="font-size:12px;color:#475569;margin-top:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Descarregar Mapas • Criar • Distribuir • Corrigir Validações</p>
+            </div>
+
+            <!-- ── ETAPA 0: DESCARREGAR MAPAS ── -->
+            <div class="glass-card" style="padding:20px 22px;margin-bottom:16px;border:1px solid rgba(16,185,129,0.2);">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+                    <div style="width:38px;height:38px;background:rgba(16,185,129,0.12);border-radius:10px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(16,185,129,0.2);flex-shrink:0;">
+                        <span class="material-symbols-rounded" style="font-size:20px;color:#34d399;">upload_file</span>
+                    </div>
+                    <div>
+                        <div style="font-size:11px;font-weight:900;color:#34d399;text-transform:uppercase;letter-spacing:0.12em;">Etapa 0 · Descarregar Mapas</div>
+                        <div style="font-size:10px;color:#475569;margin-top:2px;">Envie os arquivos .xls baixados do portal BFA para processar os dados aqui, sem precisar do Colab.</div>
+                    </div>
+                </div>
+
+                <!-- Área de drag-and-drop -->
+                <div id="ingest-dropzone"
+                    style="border:2px dashed rgba(16,185,129,0.3);border-radius:14px;padding:28px 20px;text-align:center;cursor:pointer;transition:all 0.2s;margin-bottom:12px;background:rgba(16,185,129,0.03);">
+                    <span class="material-symbols-rounded" style="font-size:32px;color:rgba(16,185,129,0.4);display:block;margin-bottom:8px;">cloud_upload</span>
+                    <div style="font-size:12px;font-weight:700;color:#94a3b8;">Arraste os arquivos .xls aqui</div>
+                    <div style="font-size:10px;color:#475569;margin-top:4px;">ou clique para selecionar • .xls / .html / .htm</div>
+                    <input id="ingest-file-input" type="file" multiple accept=".xls,.html,.htm" style="display:none;">
+                </div>
+
+                <!-- Lista de arquivos selecionados -->
+                <div id="ingest-file-list" style="margin-bottom:12px;"></div>
+
+                <!-- Botão processar -->
+                <button id="btn-ingest-process" disabled
+                    style="width:100%;padding:13px;border-radius:12px;border:1px solid rgba(16,185,129,0.3);background:rgba(16,185,129,0.1);color:#34d399;font-size:10px;font-weight:900;letter-spacing:0.14em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity 0.2s;">
+                    <span class="material-symbols-rounded" style="font-size:16px;">send</span>
+                    <span id="btn-ingest-label">SELECIONE OS ARQUIVOS ACIMA</span>
+                </button>
+
+                <!-- Status do último envio -->
+                <div id="ingest-last-status" style="margin-top:10px;font-size:10px;color:#475569;text-align:center;min-height:16px;"></div>
             </div>
 
             <!-- STATUS DOS CHECKPOINTS -->
@@ -2330,7 +2365,7 @@ renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
                     </div>
                     <div style="text-align:left;">
                         <div style="font-size:18px;font-weight:900;color:white;font-style:italic;text-transform:uppercase;letter-spacing:-0.3px;">Executar Pipeline Completo</div>
-                        <div style="font-size:10px;color:#818cf8;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;margin-top:4px;">Criar • Distribuir • Corrigir Validações</div>
+                        <div id="pipeline-full-hint" style="font-size:10px;color:#818cf8;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;margin-top:4px;">Criar • Distribuir • Corrigir Validações</div>
                     </div>
                 </div>
                 <span class="material-symbols-rounded" style="font-size:26px;color:rgba(99,102,241,0.4);flex-shrink:0;">chevron_right</span>
@@ -2393,6 +2428,143 @@ renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
                 if (ep) ep.textContent = prog;
             });
         };
+
+        // ── Ingestão de Mapas ────────────────────────────────────────────────
+
+        let arquivosPendentes = [];
+
+        const dropzone    = document.getElementById('ingest-dropzone');
+        const fileInput   = document.getElementById('ingest-file-input');
+        const fileListEl  = document.getElementById('ingest-file-list');
+        const btnProcess  = document.getElementById('btn-ingest-process');
+        const btnLabel    = document.getElementById('btn-ingest-label');
+        const lastStatus  = document.getElementById('ingest-last-status');
+        const hintEl      = document.getElementById('pipeline-full-hint');
+
+        const EXT_OK = /\.(xls|html|htm)$/i;
+
+        function atualizarListaArquivos() {
+            if (arquivosPendentes.length === 0) {
+                fileListEl.innerHTML = '';
+                btnProcess.disabled = true;
+                btnLabel.textContent = 'SELECIONE OS ARQUIVOS ACIMA';
+                return;
+            }
+            fileListEl.innerHTML = arquivosPendentes.map((f, idx) =>
+                `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;margin-bottom:4px;background:rgba(255,255,255,0.04);border-radius:8px;border:1px solid rgba(255,255,255,0.06);">
+                    <span style="font-size:10px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:75%;">
+                        <span class="material-symbols-rounded" style="font-size:12px;vertical-align:middle;color:#34d399;margin-right:4px;">description</span>${f.name}
+                    </span>
+                    <span style="font-size:9px;color:#475569;flex-shrink:0;margin-left:8px;">${(f.size/1024).toFixed(0)} KB
+                        <span data-rm="${idx}" style="cursor:pointer;color:#f87171;margin-left:6px;" title="Remover">✕</span>
+                    </span>
+                </div>`
+            ).join('');
+            fileListEl.querySelectorAll('[data-rm]').forEach(btn => {
+                btn.onclick = () => {
+                    arquivosPendentes.splice(parseInt(btn.dataset.rm), 1);
+                    atualizarListaArquivos();
+                };
+            });
+            btnProcess.disabled = false;
+            btnLabel.textContent = `PROCESSAR ${arquivosPendentes.length} ARQUIVO${arquivosPendentes.length !== 1 ? 'S' : ''}`;
+        }
+
+        function adicionarArquivos(files) {
+            const novos = Array.from(files).filter(f => EXT_OK.test(f.name));
+            if (novos.length < files.length) {
+                log('⚠️ Alguns arquivos foram ignorados (apenas .xls / .html / .htm são aceitos).');
+            }
+            // Evita duplicatas pela combinação nome+tamanho
+            const existentes = new Set(arquivosPendentes.map(f => f.name + '|' + f.size));
+            let ignorados = 0;
+            novos.forEach(f => {
+                const chave = f.name + '|' + f.size;
+                if (!existentes.has(chave)) { arquivosPendentes.push(f); existentes.add(chave); }
+                else ignorados++;
+            });
+            if (ignorados > 0) log(`⚠️ ${ignorados} arquivo(s) ignorado(s) por já estarem na lista.`);
+            atualizarListaArquivos();
+        }
+
+        dropzone.onclick = () => fileInput.click();
+        fileInput.onchange = () => { adicionarArquivos(fileInput.files); fileInput.value = ''; };
+
+        dropzone.ondragover  = (e) => { e.preventDefault(); dropzone.style.borderColor = '#34d399'; dropzone.style.background = 'rgba(16,185,129,0.07)'; };
+        dropzone.ondragleave = ()  => { dropzone.style.borderColor = 'rgba(16,185,129,0.3)'; dropzone.style.background = 'rgba(16,185,129,0.03)'; };
+        dropzone.ondrop = (e) => {
+            e.preventDefault();
+            dropzone.style.borderColor = 'rgba(16,185,129,0.3)';
+            dropzone.style.background  = 'rgba(16,185,129,0.03)';
+            adicionarArquivos(e.dataTransfer.files);
+        };
+
+        const lerArquivoComoTexto = (file) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload  = (e) => resolve({ nome: file.name, conteudo: e.target.result });
+            reader.onerror = () => reject(new Error('Falha ao ler o arquivo: ' + file.name));
+            reader.readAsText(file, 'utf-8');
+        });
+
+        function atualizarStatusIngestao(dados) {
+            if (!dados) { lastStatus.textContent = ''; return; }
+            const dt = dados.ts ? new Date(dados.ts).toLocaleString('pt-BR') : '';
+            lastStatus.innerHTML =
+                `<span style="color:#34d399;">✅ Último envio: ${dt}</span> — ` +
+                `${dados.unidades || 0} unidade(s), ${dados.pacientes || 0} paciente(s)` +
+                (dados.invalidos ? ` <span style="color:#fbbf24;">(${dados.invalidos} inválido(s))</span>` : '');
+            if (hintEl) {
+                hintEl.textContent = dados.unidades
+                    ? `Mapas prontos: ${dados.unidades} unidade(s) • Clique para criar as planilhas`
+                    : 'Criar • Distribuir • Corrigir Validações';
+                hintEl.style.color = dados.unidades ? '#34d399' : '#818cf8';
+            }
+        }
+
+        btnProcess.onclick = async () => {
+            if (arquivosPendentes.length === 0) return;
+            btnProcess.disabled = true;
+            setButtonsDisabled(true);
+            log(`📂 Lendo ${arquivosPendentes.length} arquivo(s)...`);
+
+            let arquivosLidos;
+            try {
+                arquivosLidos = await Promise.all(arquivosPendentes.map(lerArquivoComoTexto));
+            } catch (e) {
+                log('❌ Erro ao ler arquivos: ' + e.message);
+                btnProcess.disabled = false;
+                setButtonsDisabled(false);
+                return;
+            }
+
+            log('🔄 Enviando para o servidor... (pode levar alguns segundos)');
+            const res = await apiP('ingest_mapas', { arquivos_json: JSON.stringify(arquivosLidos) });
+
+            if (res.ok) {
+                log(`✅ ${res.processados}/${res.recebidos} arquivo(s) processado(s) — ${res.unidades} unidade(s), ${res.pacientes} paciente(s)`);
+                if (res.erros && res.erros.length > 0) {
+                    res.erros.forEach(e => log(`⚠️ ${e.arquivo}: ${e.erro}`));
+                }
+                if (res.processados > 0) {
+                    log('📋 Mapas gerados! Agora clique em "Executar Pipeline Completo" para criar as planilhas das unidades.');
+                }
+                atualizarStatusIngestao(res);
+            } else {
+                log('❌ ' + (res.err || 'Erro desconhecido no servidor'));
+            }
+
+            arquivosPendentes = [];
+            atualizarListaArquivos();
+            btnProcess.disabled = false;
+            setButtonsDisabled(false);
+        };
+
+        // Carrega status da última ingestão ao abrir a aba
+        apiP('get_ingest_status').then(res => {
+            if (res && res.ok) atualizarStatusIngestao(res.data);
+        });
+
+        // ── Handlers do pipeline ─────────────────────────────────────────────
 
         document.getElementById('btn-pipeline-refresh').onclick = refreshStatus;
 
