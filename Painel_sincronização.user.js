@@ -2346,7 +2346,7 @@ renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
                 <!-- Botão processar -->
                 <button id="btn-ingest-process" disabled
                     style="width:100%;padding:13px;border-radius:12px;border:1px solid rgba(16,185,129,0.3);background:rgba(16,185,129,0.1);color:#34d399;font-size:10px;font-weight:900;letter-spacing:0.14em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity 0.2s;">
-                    <span class="material-symbols-rounded" style="font-size:16px;">send</span>
+                    <span id="btn-ingest-icon" class="material-symbols-rounded" style="font-size:16px;">send</span>
                     <span id="btn-ingest-label">SELECIONE OS ARQUIVOS ACIMA</span>
                 </button>
 
@@ -2454,6 +2454,7 @@ renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
         const fileListEl  = document.getElementById('ingest-file-list');
         const btnProcess  = document.getElementById('btn-ingest-process');
         const btnLabel    = document.getElementById('btn-ingest-label');
+        const btnIcon     = document.getElementById('btn-ingest-icon');
         const lastStatus  = document.getElementById('ingest-last-status');
         const hintEl      = document.getElementById('pipeline-full-hint');
 
@@ -2552,8 +2553,33 @@ renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
 
         btnProcess.onclick = async () => {
             if (arquivosPendentes.length === 0) return;
+
+            const RESET_DELAY = 4000;
+
+            function setBtnState(icon, label, borderColor, bg, color) {
+                btnIcon.textContent  = icon;
+                btnLabel.textContent = label;
+                btnProcess.style.borderColor = borderColor;
+                btnProcess.style.background  = bg;
+                btnProcess.style.color       = color;
+            }
+
+            function resetBtn() {
+                setTimeout(() => {
+                    btnProcess.style.borderColor = '';
+                    btnProcess.style.background  = '';
+                    btnProcess.style.color       = '';
+                    btnProcess.disabled = false;
+                    setButtonsDisabled(false);
+                    atualizarListaArquivos();
+                }, RESET_DELAY);
+            }
+
             btnProcess.disabled = true;
             setButtonsDisabled(true);
+
+            // Estado: lendo arquivos ('' params = reset color overrides to default)
+            setBtnState('hourglass_top', 'LENDO ARQUIVOS...', '', '', '');
             log(`📂 Lendo ${arquivosPendentes.length} arquivo(s)...`);
 
             let arquivosLidos;
@@ -2561,15 +2587,18 @@ renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
                 arquivosLidos = await Promise.all(arquivosPendentes.map(lerArquivoComoTexto));
             } catch (e) {
                 log('❌ Erro ao ler arquivos: ' + e.message);
-                btnProcess.disabled = false;
-                setButtonsDisabled(false);
+                setBtnState('error', 'ERRO — TENTE NOVAMENTE', 'rgba(248,113,113,0.4)', 'rgba(248,113,113,0.1)', '#f87171');
+                resetBtn();
                 return;
             }
 
+            // Estado: enviando ao servidor ('' params = reset color overrides to default)
+            setBtnState('sync', 'PROCESSANDO... (aguarde)', '', '', '');
             log('🔄 Enviando para o servidor... (pode levar alguns segundos)');
             const res = await apiP('ingest_mapas', { arquivos_json: JSON.stringify(arquivosLidos) });
 
             if (res.ok) {
+                arquivosPendentes = [];
                 log(`✅ ${res.processados}/${res.recebidos} arquivo(s) processado(s) — ${res.unidades} unidade(s), ${res.pacientes} paciente(s)`);
                 if (res.erros && res.erros.length > 0) {
                     res.erros.forEach(e => log(`⚠️ ${e.arquivo}: ${e.erro}`));
@@ -2578,14 +2607,16 @@ renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
                     log('📋 Mapas gerados! Agora clique em "Executar Pipeline Completo" para criar as planilhas das unidades.');
                 }
                 atualizarStatusIngestao(res);
+
+                // Estado: concluído — feedback visual antes de resetar
+                setBtnState('check_circle', `✔ ${res.processados} ARQUIVO(S) PROCESSADO(S) — CLIQUE EM EXECUTAR PIPELINE`,
+                    'rgba(52,211,153,0.5)', 'rgba(52,211,153,0.15)', '#34d399');
             } else {
                 log('❌ ' + (res.err || 'Erro desconhecido no servidor'));
+                setBtnState('error', 'ERRO NO SERVIDOR — TENTE NOVAMENTE', 'rgba(248,113,113,0.4)', 'rgba(248,113,113,0.1)', '#f87171');
             }
 
-            arquivosPendentes = [];
-            atualizarListaArquivos();
-            btnProcess.disabled = false;
-            setButtonsDisabled(false);
+            resetBtn();
         };
 
         // Carrega status da última ingestão ao abrir a aba
