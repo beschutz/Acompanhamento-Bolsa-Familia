@@ -4,7 +4,8 @@
 // @match       https://bfa.saude.gov.br/mapaacompanhamento*
 // @match       https://bfa.saude.gov.br/principal*
 // @grant       none
-// @version     5.0
+// @version     6.0
+// @run-at      document-end
 // ==/UserScript==
 
 (function() {
