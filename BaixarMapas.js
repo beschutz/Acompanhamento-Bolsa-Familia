@@ -18,6 +18,10 @@
 
     // ── /principal: redireciona para /mapaacompanhamento somente com flag ativa ──
     if (window.location.pathname.startsWith('/principal')) {
+        // Aceita tanto o parâmetro de URL (vindo do painel, outra origem) quanto o localStorage
+        if (new URLSearchParams(window.location.search).get('bfa_mapa_intent') === '1') {
+            localStorage.setItem(FLAG_INTENT, 'true');
+        }
         if (localStorage.getItem(FLAG_INTENT) === 'true') {
             window.location.replace('https://bfa.saude.gov.br/mapaacompanhamento');
         }
