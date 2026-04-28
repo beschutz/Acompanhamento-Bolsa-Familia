@@ -119,7 +119,48 @@ function apiPanel(params) {
     if (action === "create_sheet_from_template") {
       return jsonOut(handleCreateSheetFromTemplate_(params));
     }
-    
+
+    // ── Pipeline Criação de Planilhas por Unidade ────────────────────────────
+    if (action === "run_pipeline_completo") {
+      const msg = (typeof runPipelineCompleto !== 'undefined')
+        ? runPipelineCompleto()
+        : "Erro: módulo Pipeline offline.";
+      return jsonOut({ ok: true, msg: msg });
+    }
+
+    if (action === "run_etapa_criar") {
+      const res = (typeof etapaCriarPlanilhasPorUnidade !== 'undefined')
+        ? etapaCriarPlanilhasPorUnidade()
+        : { concluido: false, msg: "Erro: módulo Pipeline offline." };
+      return jsonOut({ ok: true, concluido: res.concluido, msg: res.msg, criadas: res.criadas || 0 });
+    }
+
+    if (action === "run_etapa_distribuir") {
+      const res = (typeof etapaDistribuirPorRegiao !== 'undefined')
+        ? etapaDistribuirPorRegiao()
+        : { concluido: false, msg: "Erro: módulo Pipeline offline." };
+      return jsonOut({ ok: true, concluido: res.concluido, msg: res.msg, movidas: res.movidas || 0, naoReconhecidas: res.naoReconhecidas || [] });
+    }
+
+    if (action === "run_etapa_validacoes") {
+      const res = (typeof etapaCorrigirValidacoes !== 'undefined')
+        ? etapaCorrigirValidacoes()
+        : { concluido: false, msg: "Erro: módulo Pipeline offline." };
+      return jsonOut({ ok: true, concluido: res.concluido, msg: res.msg, corrigidas: res.corrigidas || 0 });
+    }
+
+    if (action === "get_pipeline_status") {
+      const status = (typeof getPipelineStatus !== 'undefined')
+        ? getPipelineStatus()
+        : null;
+      return jsonOut({ ok: true, data: status });
+    }
+
+    if (action === "reset_pipeline") {
+      if (typeof clearAllPipelineCheckpoints !== 'undefined') clearAllPipelineCheckpoints();
+      return jsonOut({ ok: true, msg: "Checkpoints do pipeline removidos." });
+    }
+
     return jsonOut({ ok: false, err: "Ação desconhecida pelo Painel." });
 
     
