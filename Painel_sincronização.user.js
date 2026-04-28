@@ -2315,6 +2315,22 @@ renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
                     </div>
                 </div>
 
+                <!-- Passo A: Baixar no portal BFA -->
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding:10px 12px;background:rgba(16,185,129,0.05);border-radius:10px;border:1px solid rgba(16,185,129,0.12);">
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.1em;">Passo A · Baixar no portal BFA</div>
+                        <div id="bfa-mapa-status-label" style="font-size:9px;color:#475569;margin-top:3px;">Abre o site BFA e inicia o download automático dos mapas.</div>
+                    </div>
+                    <button id="btn-baixar-mapas-bfa"
+                        style="flex-shrink:0;margin-left:12px;padding:8px 13px;border-radius:10px;border:1px solid rgba(16,185,129,0.3);background:rgba(16,185,129,0.12);color:#34d399;font-size:9px;font-weight:900;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;gap:5px;">
+                        <span class="material-symbols-rounded" style="font-size:13px;">open_in_new</span>
+                        BAIXAR MAPAS
+                    </button>
+                </div>
+
+                <!-- Passo B: enviar arquivos -->
+                <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px;">Passo B · Envie os arquivos baixados</div>
+
                 <!-- Área de drag-and-drop -->
                 <div id="ingest-dropzone"
                     style="border:2px dashed rgba(16,185,129,0.3);border-radius:14px;padding:28px 20px;text-align:center;cursor:pointer;transition:all 0.2s;margin-bottom:12px;background:rgba(16,185,129,0.03);">
@@ -2486,6 +2502,20 @@ renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
             if (ignorados > 0) log(`⚠️ ${ignorados} arquivo(s) ignorado(s) por já estarem na lista.`);
             atualizarListaArquivos();
         }
+
+        // ── Botão "Baixar Mapas no BFA" ──────────────────────────────────────
+        const btnBaixarMapas   = document.getElementById('btn-baixar-mapas-bfa');
+        const bfaStatusLabel   = document.getElementById('bfa-mapa-status-label');
+
+        btnBaixarMapas.onclick = () => {
+            localStorage.setItem('bf_mapa_intent', 'true');
+            window.open('https://bfa.saude.gov.br/principal', '_blank');
+            bfaStatusLabel.textContent = 'Aguardando conclusão do download no portal BFA…';
+            bfaStatusLabel.style.color = '#fbbf24';
+            btnBaixarMapas.disabled    = true;
+            btnBaixarMapas.style.opacity = '0.5';
+            btnBaixarMapas.style.cursor  = 'default';
+        };
 
         dropzone.onclick = () => fileInput.click();
         fileInput.onchange = () => { adicionarArquivos(fileInput.files); fileInput.value = ''; };
