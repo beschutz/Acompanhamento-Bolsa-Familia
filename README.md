@@ -59,6 +59,7 @@ desenvolvido para a Secretaria Municipal de Saúde de Porto Alegre.
 | `Devolução.gs` | Escrita de dados de retorno (Data, Peso, Altura, E-Gestor) nas planilhas das unidades |
 | `api.gs` | API centralizada: expõe endpoints para o Painel Web e robôs Tampermonkey |
 | `Painel_sincronização.user.js` | Userscript Tampermonkey/Violentmonkey: painel web de gestão e automação |
+| `BaixarMapas.js` | Userscript de download automático dos mapas BFA - acionado exclusivamente pelo botão "Baixar Mapas" no painel; sem clique, nenhuma automação inicia e nenhum redirecionamento ocorre |
 | `automacao_egestor.user.js` | Userscript de automação do e-Gestor |
 | `automacao_esus.user.js` | Userscript de automação do e-SUS |
 
@@ -109,16 +110,22 @@ const CONFIG_PIPELINE = {
 ### A. Início de vigência — gerar planilhas das unidades
 
 ```
-1. Baixe os mapas no site BFA
-   → Acesse https://bfa.saude.gov.br/mapaacompanhamento
-   → Use a automação Tampermonkey (automacao_baixar_mapas.user.js) para
-     baixar todos os mapas automaticamente
-   → Os arquivos serão salvos na pasta "Downloads" do seu computador
-
-2. Abra o Painel Web (ícone Violentmonkey/Tampermonkey)
+1. Baixe os mapas no site BFA (via botão no painel)
+   → Abra o Painel Web (ícone Violentmonkey/Tampermonkey)
    → Clique na aba "Pipeline Unidades"
+   → Na seção "Etapa 0 · Descarregar Mapas", clique no botão "BAIXAR MAPAS"
+     (Passo A). O portal BFA será aberto em nova aba.
+   → O script BaixarMapas.js detecta a flag ativada pelo painel, redireciona
+     para https://bfa.saude.gov.br/mapaacompanhamento e inicia o download
+     automático dos mapas (um por estabelecimento).
+   → Quando concluído, o painel BFA exibe:
+     "✅ Mapas gerados! Volte para o app e execute o pipeline completo."
+   → Os arquivos serão salvos na pasta "Downloads" do seu computador.
 
-3. Envie os arquivos baixados (seção "Etapa 0 · Descarregar Mapas")
+   ⚠️  SEM clicar no botão "BAIXAR MAPAS" no painel, o script não executa
+       nenhuma ação ao visitar o BFA — outros robôs não são afetados.
+
+2. Envie os arquivos baixados (Passo B — seção "Etapa 0 · Descarregar Mapas")
    → Arraste os arquivos .xls para a área indicada
      ou clique para selecionar múltiplos arquivos
    → Clique em "PROCESSAR X ARQUIVOS"
@@ -127,7 +134,7 @@ const CONFIG_PIPELINE = {
    → Mensagem de sucesso: "📋 Mapas gerados! Agora clique em
      Executar Pipeline Completo..."
 
-4. Execute o Pipeline Completo
+3. Execute o Pipeline Completo
    → Clique no botão "Executar Pipeline Completo"
    → Confirme a operação
    → Aguarde (pode precisar de várias rodadas — clique novamente se aparecer
@@ -135,7 +142,7 @@ const CONFIG_PIPELINE = {
    → Resultado final: planilhas criadas por unidade, distribuídas por região
      e com validações corrigidas
 
-5. Verifique o resultado
+4. Verifique o resultado
    → No painel, os indicadores "Etapa 1 · Criar", "Etapa 2 · Distribuir" e
      "Etapa 3 · Validações" devem mostrar "CONCLUIDO"
 ```
