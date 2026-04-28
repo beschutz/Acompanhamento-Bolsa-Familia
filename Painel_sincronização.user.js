@@ -211,7 +211,7 @@
         const scriptTailwind = document.createElement('script');
         scriptTailwind.src = "https://cdn.tailwindcss.com";
         scriptTailwind.onload = () => {
-            window.tailwind.config = { theme: { extend: { colors: { dark: { 700: '#334155', 800: '#1e293b', 900: '#0f172a' } } } } };
+            if (window.tailwind) window.tailwind.config = { theme: { extend: { colors: { dark: { 700: '#334155', 800: '#1e293b', 900: '#0f172a' } } } } };
             setTimeout(removeOverlay, 200);
         };
         document.head.appendChild(scriptTailwind);
@@ -406,19 +406,28 @@
                         // Calculamos subtraindo os novos e o esus do total buscado (só não deixa ficar negativo)
                         const calculoJaCadastrados = Math.max(0, totalBuscado - cadastrosRealizados - esusAtualizados);
 
-                        document.getElementById('v0').innerText = totalBuscado;
-                        document.getElementById('v1').innerText = cadastrosRealizados;
-                        document.getElementById('v_eg_atu').innerText = calculoJaCadastrados;
-                        document.getElementById('v2').innerText = esusAtualizados;
-                        document.getElementById('dash-vig').innerText = res.dados.config?.vigencia || "";
-                        document.getElementById('v-fila-egestor').innerText = res.dados.fila_egestor || 0;
-                        document.getElementById('v-fila-esus').innerText = res.dados.fila_esus || 0;
+                        const elV0 = document.getElementById('v0');
+                        const elV1 = document.getElementById('v1');
+                        const elVEgAtu = document.getElementById('v_eg_atu');
+                        const elV2 = document.getElementById('v2');
+                        const elDashVig = document.getElementById('dash-vig');
+                        const elFilaEgestor = document.getElementById('v-fila-egestor');
+                        const elFilaEsus = document.getElementById('v-fila-esus');
+                        const elDashPct = document.getElementById('dash-pct');
+                        const elDashBar = document.getElementById('dash-bar');
+                        if (elV0) elV0.innerText = totalBuscado;
+                        if (elV1) elV1.innerText = cadastrosRealizados;
+                        if (elVEgAtu) elVEgAtu.innerText = calculoJaCadastrados;
+                        if (elV2) elV2.innerText = esusAtualizados;
+                        if (elDashVig) elDashVig.innerText = res.dados.config?.vigencia || "";
+                        if (elFilaEgestor) elFilaEgestor.innerText = res.dados.fila_egestor || 0;
+                        if (elFilaEsus) elFilaEsus.innerText = res.dados.fila_esus || 0;
 
                         const total = parseFloat(res.dados.total_db) || 0;
                         const concluido = parseFloat(res.dados.concluidos_db) || 0;
                         const pct = total > 0 ? ((concluido / total) * 100).toFixed(1) : "0.0";
-                        document.getElementById('dash-pct').innerText = pct + '%';
-                        document.getElementById('dash-bar').style.width = pct + '%';
+                        if (elDashPct) elDashPct.innerText = pct + '%';
+                        if (elDashBar) elDashBar.style.width = pct + '%';
 
                         if (res.dados.historico && typeof Chart !== 'undefined') {
                             const ctx = document.getElementById('dashboardChart').getContext('2d');
@@ -2422,7 +2431,7 @@ renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
         };
 
         const setButtonsDisabled = (disabled) => {
-            ['btn-pipeline-full', ...document.querySelectorAll('.pipeline-etapa')]
+            [document.getElementById('btn-pipeline-full'), ...document.querySelectorAll('.pipeline-etapa')]
                 .forEach(el => { if (el) el.disabled = disabled; });
         };
 
