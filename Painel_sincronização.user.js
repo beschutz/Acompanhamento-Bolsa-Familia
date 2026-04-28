@@ -236,6 +236,7 @@
                         <div class="nav-section-label">Principal</div>
                         <div id="nav-dashboard" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">dashboard</span> Dashboard</div>
                         <div id="nav-planilhas" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">table_chart</span> Gestão Planilhas</div>
+                        <div id="nav-pipeline" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">account_tree</span> Pipeline Unidades</div>
                         <div id="nav-config" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">settings</span> Configuração</div>
                         <div id="nav-condicionalidades" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">rule_settings</span> Condicionalidades</div>
                         <div id="nav-construtor" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">build</span> Construtor</div>
@@ -263,6 +264,7 @@
         const navs = {
             'dashboard': renderDashboard,
             'planilhas': renderPlanilhas,
+            'pipeline':  renderPipeline,
             'config': renderConfig,
             'condicionalidades': renderCondicionalidades,
             'construtor': renderConstrutor,
@@ -284,6 +286,7 @@
 
         document.getElementById('nav-dashboard').onclick = () => loadRoute('dashboard');
         document.getElementById('nav-planilhas').onclick = () => loadRoute('planilhas');
+        document.getElementById('nav-pipeline').onclick  = () => loadRoute('pipeline');
         document.getElementById('nav-config').onclick = () => loadRoute('config');
         document.getElementById('nav-condicionalidades').onclick = () => loadRoute('condicionalidades');
         document.getElementById('nav-construtor').onclick = () => loadRoute('construtor');
@@ -2278,6 +2281,157 @@ renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
         loadLista();
     }
 
+    // =============================================================================
+    // 🏭 PIPELINE — CRIAÇÃO DE PLANILHAS POR UNIDADE DE SAÚDE
+    // =============================================================================
+    function renderPipeline(container) {
+        const apiP = (action, extra) => new Promise(resolve => {
+            const data = Object.entries(Object.assign({ action, api_target: 'panel', token: TOKEN_ACESSO }, extra || {}))
+                .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v == null ? '' : String(v))}`).join('&');
+            GM_xmlhttpRequest({
+                method: 'POST', url: URL_APPS_SCRIPT,
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, data,
+                onload: (r) => { try { resolve(JSON.parse(r.responseText)); } catch { resolve({ ok: false, err: 'Resposta inválida' }); } },
+                onerror: () => resolve({ ok: false, err: 'Erro de rede' })
+            });
+        });
 
+        container.innerHTML = `
+        <div class="animate-fade" style="max-width:860px;margin:0 auto;">
+            <div style="margin-bottom:28px;border-bottom:1px solid rgba(255,255,255,0.05);padding-bottom:18px;">
+                <h2 style="font-size:26px;font-weight:900;color:white;letter-spacing:-0.5px;font-style:italic;text-transform:uppercase;margin:0;">Pipeline Unidades</h2>
+                <p style="font-size:12px;color:#475569;margin-top:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Criar • Distribuir • Corrigir Validações</p>
+            </div>
+
+            <!-- STATUS DOS CHECKPOINTS -->
+            <div class="glass-card" style="padding:18px 20px;margin-bottom:16px;border:1px solid rgba(99,102,241,0.15);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+                    <div style="font-size:9px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.14em;">Estado atual das etapas</div>
+                    <button id="btn-pipeline-refresh" class="btn-glass" style="padding:8px 12px;font-size:9px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;border-radius:10px;">
+                        <span class="material-symbols-rounded" style="font-size:14px;vertical-align:middle;">refresh</span> Atualizar
+                    </button>
+                </div>
+                <div id="pipeline-status" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+                    ${['Etapa 1 · Criar', 'Etapa 2 · Distribuir', 'Etapa 3 · Validações'].map((l, i) => `
+                    <div class="glass-card" style="margin:0;padding:14px;text-align:center;border:1px solid rgba(255,255,255,0.05);">
+                        <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;">${l}</div>
+                        <div id="ps-fase-${i}" style="font-size:12px;font-weight:900;color:#94a3b8;">--</div>
+                        <div id="ps-prog-${i}" style="font-size:10px;color:#475569;margin-top:4px;">--</div>
+                    </div>`).join('')}
+                </div>
+            </div>
+
+            <!-- PIPELINE COMPLETO -->
+            <button id="btn-pipeline-full" class="btn-sync-main"
+                style="width:100%;background:linear-gradient(135deg,rgba(99,102,241,0.12),rgba(99,102,241,0.06));border:1px solid rgba(99,102,241,0.25);border-radius:20px;padding:24px 28px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;margin-bottom:14px;">
+                <div style="display:flex;align-items:center;gap:18px;">
+                    <div style="width:52px;height:52px;background:rgba(99,102,241,0.15);border-radius:14px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(99,102,241,0.2);flex-shrink:0;">
+                        <span class="material-symbols-rounded" style="font-size:28px;color:#818cf8;">account_tree</span>
+                    </div>
+                    <div style="text-align:left;">
+                        <div style="font-size:18px;font-weight:900;color:white;font-style:italic;text-transform:uppercase;letter-spacing:-0.3px;">Executar Pipeline Completo</div>
+                        <div style="font-size:10px;color:#818cf8;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;margin-top:4px;">Criar • Distribuir • Corrigir Validações</div>
+                    </div>
+                </div>
+                <span class="material-symbols-rounded" style="font-size:26px;color:rgba(99,102,241,0.4);flex-shrink:0;">chevron_right</span>
+            </button>
+
+            <!-- ETAPAS INDIVIDUAIS -->
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;">
+                ${[
+                    { id: 'criar',      label: '1. Criar Planilhas',    icon: 'add_chart',     color: '#34d399', action: 'run_etapa_criar' },
+                    { id: 'distribuir', label: '2. Distribuir Regiões', icon: 'move_location', color: '#60a5fa', action: 'run_etapa_distribuir' },
+                    { id: 'validacoes', label: '3. Corrigir Validações',icon: 'rule_settings', color: '#f59e0b', action: 'run_etapa_validacoes' }
+                ].map(b => `
+                <button data-action="${b.action}" class="pipeline-etapa btn-action-card glass-card"
+                    style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px 12px;cursor:pointer;border:1px solid rgba(255,255,255,0.05);">
+                    <div style="width:44px;height:44px;background:${b.color}18;border-radius:12px;display:flex;align-items:center;justify-content:center;border:1px solid ${b.color}30;">
+                        <span class="material-symbols-rounded" style="font-size:22px;color:${b.color};">${b.icon}</span>
+                    </div>
+                    <div style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.1em;text-align:center;">${b.label}</div>
+                </button>`).join('')}
+            </div>
+
+            <!-- LOG + RESET -->
+            <div id="pipeline-log" class="glass-card"
+                style="padding:14px 18px;background:rgba(0,0,0,0.55);height:140px;font-family:'Courier New',monospace;font-size:11px;overflow-y:auto;color:#34d399;border:1px solid rgba(16,185,129,0.1);border-radius:16px;margin-bottom:12px;">
+                > PIPELINE PRONTO.
+            </div>
+
+            <button id="btn-pipeline-reset" class="btn-glass"
+                style="width:100%;padding:12px;font-size:9px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;border-radius:12px;color:#f87171;border-color:rgba(239,68,68,0.25);">
+                <span class="material-symbols-rounded" style="font-size:14px;vertical-align:middle;">restart_alt</span> Resetar Checkpoints
+            </button>
+        </div>`;
+
+        const logEl = document.getElementById('pipeline-log');
+        const log = (msg) => {
+            logEl.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+            logEl.scrollTop = logEl.scrollHeight;
+        };
+
+        const setButtonsDisabled = (disabled) => {
+            ['btn-pipeline-full', ...document.querySelectorAll('.pipeline-etapa')]
+                .forEach(el => { if (el) el.disabled = disabled; });
+        };
+
+        const refreshStatus = async () => {
+            const res = await apiP('get_pipeline_status');
+            if (!res || !res.ok || !res.data) return;
+            const s = res.data;
+            const etapas = ['criar', 'distribuir', 'validacoes'];
+            etapas.forEach((k, i) => {
+                const fase = s[k] ? s[k].fase : 'NAO_INICIADO';
+                const prog = s[k] ? s[k].progresso : '0/0';
+                const el = document.getElementById('ps-fase-' + i);
+                const ep = document.getElementById('ps-prog-' + i);
+                if (el) {
+                    const color = fase === 'CONCLUIDO' ? '#34d399' : fase === 'PROCESSAMENTO' ? '#fbbf24' : '#64748b';
+                    el.style.color = color;
+                    el.textContent = fase.replace('_', ' ');
+                }
+                if (ep) ep.textContent = prog;
+            });
+        };
+
+        document.getElementById('btn-pipeline-refresh').onclick = refreshStatus;
+
+        document.getElementById('btn-pipeline-full').onclick = async () => {
+            if (!confirm('Executar pipeline completo? A operação pode levar várias rodadas.')) return;
+            setButtonsDisabled(true);
+            log('▶ Iniciando pipeline completo...');
+            const res = await apiP('run_pipeline_completo');
+            log(res.ok ? '✅ ' + res.msg : '❌ ' + (res.err || 'Erro desconhecido'));
+            setButtonsDisabled(false);
+            refreshStatus();
+        };
+
+        document.querySelectorAll('.pipeline-etapa').forEach(btn => {
+            btn.onclick = async () => {
+                const action = btn.dataset.action;
+                const label = btn.querySelector('div:last-child').textContent.trim();
+                log('▶ ' + label + '...');
+                btn.disabled = true;
+                const res = await apiP(action);
+                if (res.ok) {
+                    const concluido = res.concluido ? '✅ Concluído' : '⏳ Parcial (reexecute)';
+                    log(concluido + ' — ' + res.msg);
+                } else {
+                    log('❌ ' + (res.err || 'Erro desconhecido'));
+                }
+                btn.disabled = false;
+                refreshStatus();
+            };
+        });
+
+        document.getElementById('btn-pipeline-reset').onclick = async () => {
+            if (!confirm('Resetar todos os checkpoints do pipeline? Etapas já concluídas precisarão ser reexecutadas.')) return;
+            const res = await apiP('reset_pipeline');
+            log(res.ok ? '🔄 ' + res.msg : '❌ ' + (res.err || 'Erro'));
+            refreshStatus();
+        };
+
+        refreshStatus();
+    }
 
 })();
