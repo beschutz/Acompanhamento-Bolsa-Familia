@@ -2508,8 +2508,7 @@ renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
         const bfaStatusLabel   = document.getElementById('bfa-mapa-status-label');
 
         btnBaixarMapas.onclick = () => {
-            localStorage.setItem('bf_mapa_intent', 'true');
-            window.open('https://bfa.saude.gov.br/principal', '_blank');
+            window.open('https://bfa.saude.gov.br/principal?bfa_mapa_intent=1', '_blank');
             bfaStatusLabel.textContent = 'Aguardando conclusão do download no portal BFA…';
             bfaStatusLabel.style.color = '#fbbf24';
             btnBaixarMapas.disabled    = true;
