@@ -137,7 +137,8 @@ function etapaCriarPlanilhasPorUnidade() {
 
   // ── Migração: checkpoint legado armazena objetos { nome, pacientes } em lista ─
   // Converte para o formato enxuto (apenas nomes) para liberar quota de propriedades.
-  if (cp.lista.length > 0 && typeof cp.lista[0] === 'object' && cp.lista[0] !== null) {
+  if (cp.lista.length > 0 && typeof cp.lista[0] === 'object' && cp.lista[0] !== null &&
+      cp.lista[0].pacientes !== undefined) {
     logPadrao(MOD, 'Checkpoint legado detectado (contém dados de pacientes). Migrando para formato compacto…', 'AVISO');
     cp.lista = cp.lista.map(function(item) { return item.nome || ''; }).filter(Boolean);
     saveCheckpoint(cpKey, cp);
@@ -254,8 +255,12 @@ function etapaCriarPlanilhasPorUnidade() {
       const nomeUnidade = cp.lista[cp.indice];
       logPadrao(MOD, '[' + (cp.indice + 1) + '/' + cp.lista.length + '] Processando: ' + nomeUnidade);
 
-      // Idempotência: pula se já foi criada
-      if (!cp.criadas[nomeUnidade]) {
+      // Idempotência: pula apenas unidades criadas COM SUCESSO.
+      // Unidades com erro anterior (valor começa com 'ERRO:') são reprocessadas.
+      const registroAnterior = cp.criadas[nomeUnidade];
+      const jaCriadaComSucesso = registroAnterior && !String(registroAnterior).startsWith('ERRO:');
+
+      if (!jaCriadaComSucesso) {
         try {
           const pacientes = _obterPacientesDaUnidade_(nomeUnidade);
           const ssId = _pipeline_criarPlanilhaUnidade(nomeUnidade, pacientes, tpl, pastaOrigem, cfg, colIdx);
@@ -263,7 +268,8 @@ function etapaCriarPlanilhasPorUnidade() {
           logPadrao(MOD, 'Planilha criada: ' + nomeUnidade + ' (' + ssId + ')');
         } catch (e) {
           logPadrao(MOD, 'Erro em "' + nomeUnidade + '": ' + e.message, 'ERRO');
-          // Registra o erro mas continua para não travar o pipeline
+          // Registra o erro mas continua para não travar o pipeline.
+          // Na próxima execução a unidade será reprocessada automaticamente.
           cp.criadas[nomeUnidade] = 'ERRO:' + e.message;
         }
       } else {
@@ -377,7 +383,18 @@ function _pipeline_criarPlanilhaUnidade(nomeUnidade, pacientes, tpl, pastaOrigem
 
   // Reabre para escrever os dados (construtor_criarPlanilha já fez flush)
   const sheet = SpreadsheetApp.openById(ssId).getSheetByName(cfg.nomeAbaVigencia);
-  if (!sheet) return ssId;
+  if (!sheet) {
+    // A aba não foi encontrada pelo nome configurado em nomeAbaVigencia.
+    // Causa mais comum: o template usa um nomeAba diferente do que está em
+    // Config_Pipeline.gs (nomeAbaVigencia). Verifique se ambos coincidem.
+    const abasExistentes = SpreadsheetApp.openById(ssId).getSheets().map(function(s) { return s.getName(); });
+    logPadrao('CRIAR',
+      'Aba "' + cfg.nomeAbaVigencia + '" não encontrada em "' + nomeUnidade + '" após criação. ' +
+      'Abas existentes: [' + abasExistentes.join(', ') + ']. ' +
+      'Verifique se nomeAbaVigencia em Config_Pipeline.gs coincide com o nomeAba do template no Construtor.',
+      'ERRO');
+    return ssId; // planilha criada mas sem dados
+  }
 
   // Linha de início dos dados = faixas + bloco-títulos + cabeçalho + 1
   const linhaInicio = (tpl.config.faixas || []).length + 3;
