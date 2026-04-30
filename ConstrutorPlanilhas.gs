@@ -2,10 +2,6 @@
  * 🧩 MÓDULO CONSTRUTOR DE PLANILHAS
  * Cria e gerencia templates de layout visual baseados no modelo de referência
  * do Acompanhamento de Condicionalidades - Bolsa Família (SMS/Porto Alegre).
- *
- * Exposição via api.gs:
- *   list_templates, get_template, save_template, delete_template,
- *   create_sheet_from_template
  */
 
 // =============================================================================
@@ -14,7 +10,7 @@
 
 const CONSTRUTOR_INDEX_KEY_    = 'CONSTRUTOR_TEMPLATES_INDEX';
 const CONSTRUTOR_TPL_PREFIX_   = 'CONSTRUTOR_TPL_';
-const CONSTRUTOR_MAX_TPL_BYTES = 48000; // ~48 KB por template
+const CONSTRUTOR_MAX_TPL_BYTES = 48000; 
 
 function construtor_listarTemplates() {
   const raw = PropertiesService.getScriptProperties().getProperty(CONSTRUTOR_INDEX_KEY_);
@@ -59,130 +55,134 @@ function construtor_deletarTemplate(id) {
 }
 
 // =============================================================================
-// 2. TEMPLATE PADRÃO (idêntico ao modelo de referência)
+// 2. TEMPLATE PADRÃO (Idêntico ao Print 1 do Usuário)
 // =============================================================================
 
 function construtor_templatePadrao() {
   return {
     id: '__padrao__',
-    nome: 'Modelo Padrão (Vigência 1/2026)',
+    nome: 'Modelo Padrão',
     config: {
       nomeAba: 'MAPA INDIVIDUALIZADO VIGÊNCIA 1/2026',
       faixas: [
         {
-          texto: 'PREFEITURA MUNICIPAL DE PORTO ALEGRE — SECRETARIA MUNICIPAL DE SAÚDE',
-          bgColor: '#1F3864',
-          fontColor: '#FFFFFF',
+          texto: 'PACIENTE ACOMPANHADO NA US',
+          bgColor: '#ffd966',
+          fontColor: '#000000',
           negrito: true,
           altura: 30
         },
         {
-          texto: 'ACOMPANHAMENTO DE CONDICIONALIDADES DO BOLSA FAMÍLIA — VIGÊNCIA 1/2026',
-          bgColor: '#2E75B6',
-          fontColor: '#FFFFFF',
+          texto: 'PACIENTE ACOMPANHADO NO EGESTOR',
+          bgColor: '#93c47d',
+          fontColor: '#000000',
           negrito: true,
           altura: 30
+        },
+        {
+          texto: 'PACIENTE FORA DE ÁREA',
+          bgColor: '#6fa8dc',
+          fontColor: '#000000',
+          negrito: true,
+          altura: 28
+        },
+        {
+          texto: 'PACIENTE NÃO LOCALIZADO/NÃO RECEBE',
+          bgColor: '#e06666',
+          fontColor: '#000000',
+          negrito: true,
+          altura: 28
         }
       ],
       blocos: [
         {
           id: 'bloco_identificacao',
           titulo: 'IDENTIFICAÇÃO',
-          bgColor: '#4472C4',
+          bgColor: '#dd7e6b',
           fontColor: '#FFFFFF',
           colunas: [
-            { id: 'nis',   titulo: 'NIS',           largura: 125 },
-            { id: 'cns',   titulo: 'CNS',           largura: 130 },
-            { id: 'cpf',   titulo: 'CPF',           largura: 115 },
-            { id: 'nome',  titulo: 'NOME COMPLETO', largura: 220 },
-            { id: 'nasc',  titulo: 'NASC.',         largura: 88  },
-            { id: 'idade', titulo: 'IDADE',         largura: 58  }
+            { id: 'nis',   titulo: 'NIS',             largura: 110 },
+            { id: 'cpf',   titulo: 'CPF',             largura: 110 },
+            { id: 'nome',  titulo: 'NOME',            largura: 250 },
+            { id: 'nasc',  titulo: 'DATA NASCIMENTO', largura: 110 }
           ]
         },
         {
           id: 'bloco_acomp_us',
           titulo: 'ACOMPANHAMENTO US',
-          bgColor: '#375623',
+          bgColor: '#a4c2f4',
           fontColor: '#FFFFFF',
           colunas: [
-            { id: 'acomp_us',   titulo: 'ACOMP. NA US',  largura: 100 },
-            { id: 'data_acomp', titulo: 'DATA ACOMP.',   largura: 95  }
+            { id: 'acomp_us',   titulo: 'ACOMPANHADO NA US',   largura: 120 },
+            { id: 'data_acomp', titulo: 'DATA ACOMPANHAMENTO', largura: 130 },
+            { id: 'peso',       titulo: 'PESO (kg)',           largura: 80 },
+            { id: 'altura',     titulo: 'ALTURA (cm)',         largura: 80 }
           ]
         },
         {
-          id: 'bloco_medidas',
-          titulo: 'MEDIDAS',
-          bgColor: '#833C00',
+          id: 'bloco_criancas',
+          titulo: 'CRIANÇAS ATÉ 8 ANOS',
+          bgColor: '#b6d7a8',
           fontColor: '#FFFFFF',
           colunas: [
-            { id: 'peso',   titulo: 'PESO (kg)',          largura: 80 },
-            { id: 'altura', titulo: 'ALTURA/ESTATURA (m)', largura: 98 }
+            { id: 'vacina',        titulo: 'VACINA',               largura: 100 },
+            { id: 'motivo_vacina', titulo: 'MOTIVO NÃO VACINAÇÃO', largura: 150 }
           ]
         },
         {
-          id: 'bloco_saude',
-          titulo: 'SAÚDE / GESTACIONAL',
-          bgColor: '#00494B',
+          id: 'bloco_gestantes',
+          titulo: 'GESTANTES',
+          bgColor: '#b4a7d6',
           fontColor: '#FFFFFF',
           colunas: [
-            { id: 'vacina',    titulo: 'VACINAÇÃO EM DIA', largura: 100 },
-            { id: 'gestante',  titulo: 'GESTANTE',         largura: 85  },
-            { id: 'dum',       titulo: 'DUM',              largura: 88  },
-            { id: 'pre_natal', titulo: 'PRÉ-NATAL',        largura: 90  }
+            { id: 'gestante',  titulo: 'GESTANTE',  largura: 90 },
+            { id: 'dum',       titulo: 'DUM',       largura: 90 },
+            { id: 'pre_natal', titulo: 'PRÉ-NATAL', largura: 90 }
           ]
         },
         {
-          id: 'bloco_egestor',
-          titulo: 'E-GESTOR',
-          bgColor: '#3A1D5C',
+          id: 'bloco_contato',
+          titulo: 'INFORMAÇÕES DE CONTATO',
+          bgColor: '#a2c4c9',
           fontColor: '#FFFFFF',
           colunas: [
-            { id: 'egestor', titulo: 'ACOMP. NO E-GESTOR', largura: 115 }
+            { id: 'telefone', titulo: 'TELEFONE', largura: 110 },
+            { id: 'endereco', titulo: 'ENDEREÇO', largura: 160 }
+          ]
+        },
+        {
+          id: 'bloco_extras',
+          titulo: 'EXTRAS',
+          bgColor: '#d5a6bd',
+          fontColor: '#FFFFFF',
+          colunas: [
+            { id: 'egestor', titulo: 'ACOMPANHADO NO EGESTOR', largura: 150 },
+            { id: 'obs',     titulo: 'OBSERVAÇÕES',            largura: 160 }
           ]
         }
       ],
       alturaLinhaCabecalho: 46,
       alturaLinhasDados: 21,
-      congelarLinhas: 4,
+      congelarLinhas: 6,
       bordas: true
     },
     regrasValidacao: [
-      { colId: 'acomp_us',   tipo: 'lista', valores: ['SIM', 'NÃO', 'EM ACOMP.'] },
-      { colId: 'egestor',    tipo: 'lista', valores: ['SIM', 'NÃO'] },
-      { colId: 'vacina',     tipo: 'lista', valores: ['SIM', 'NÃO', 'EM DIA', 'NÃO APLICÁVEL'] },
-      { colId: 'gestante',   tipo: 'lista', valores: ['SIM', 'NÃO'] },
-      { colId: 'pre_natal',  tipo: 'lista', valores: ['SIM', 'NÃO', 'EM ANDAMENTO', 'N/A'] }
+      { colId: 'acomp_us',  tipo: 'lista', valores: ['SIM', 'NÃO'] },
+      { colId: 'vacina',    tipo: 'lista', valores: ['SIM', 'NÃO'] },
+      { colId: 'gestante',  tipo: 'lista', valores: ['SIM', 'NÃO'] },
+      { colId: 'pre_natal', tipo: 'lista', valores: ['SIM', 'NÃO'] },
+      { colId: 'egestor',   tipo: 'lista', valores: ['SIM', 'NÃO'] }
     ],
     formatacaoCondicional: [
-      {
-        formula: 'EXATO($G2,"SIM")',
-        bgColor: '#C6EFCE',
-        fontColor: '#276221',
-        descricao: 'Acompanhado na US = SIM → verde'
-      },
-      {
-        formula: 'EXATO($P2,"SIM")',
-        bgColor: '#C6EFCE',
-        fontColor: '#276221',
-        descricao: 'E-Gestor = SIM → verde'
-      },
-      {
-        formula: 'EXATO($P2,"NÃO")',
-        bgColor: '#FFCCCC',
-        fontColor: '#9C0006',
-        descricao: 'E-Gestor = NÃO → vermelho'
-      },
-      {
-        formula: 'EXATO($G2,"NÃO")',
-        bgColor: '#FCE4D6',
-        fontColor: '#833C00',
-        descricao: 'Não acompanhado na US → laranja claro'
-      }
+      { formula: 'EXATO($E2,"SIM")', bgColor: '#ffd966', fontColor: '#000000', descricao: 'Acomp. US SIM' },
+      { formula: 'EXATO($P2,"SIM")', bgColor: '#93c47d', fontColor: '#000000', descricao: 'E-Gestor SIM' },
+      { formula: 'EXATO($P2,"NÃO")', bgColor: '#FFCCCC', fontColor: '#9C0006', descricao: 'E-Gestor NÃO' },
+      { formula: 'EXATO($E2,"NÃO")', bgColor: '#FCE4D6', fontColor: '#833C00', descricao: 'Acomp. US NÃO' }
     ],
     protecoes: [
       {
         tipo: 'coluna',
-        colIds: ['nis', 'cns', 'cpf', 'nome', 'nasc', 'idade'],
+        colIds: ['nis', 'cpf', 'nome', 'nasc'],
         descricao: 'Identificação — não editar manualmente'
       }
     ]
@@ -193,13 +193,6 @@ function construtor_templatePadrao() {
 // 3. MOTOR DE CONSTRUÇÃO DE PLANILHA
 // =============================================================================
 
-/**
- * Cria (ou recria) uma aba em uma planilha, aplicando layout + regras.
- * @param {Object|string} templateJson  Template completo (objeto ou JSON string).
- * @param {string|null}   spreadsheetId ID da planilha de destino (null = cria nova planilha).
- * @param {string|null}   nomeAba       Nome da aba (null = usa config.nomeAba do template).
- * @returns {{ spreadsheetId, spreadsheetUrl, sheetName }}
- */
 function construtor_criarPlanilha(templateJson, spreadsheetId, nomeAba) {
   const tpl = (typeof templateJson === 'string') ? JSON.parse(templateJson) : templateJson;
   const cfg = tpl.config || {};
@@ -213,7 +206,6 @@ function construtor_criarPlanilha(templateJson, spreadsheetId, nomeAba) {
     ss = SpreadsheetApp.create(nomeAbaFinal);
   }
 
-  // Apaga aba se já existir para recriar limpa
   let sheet = ss.getSheetByName(nomeAbaFinal);
   if (sheet) {
     sheet.clear();
@@ -254,12 +246,10 @@ function construtor_aplicarLayout_(sheet, cfg) {
 
   if (totalCols === 0) return;
 
-  // Linhas estruturais
-  const numFaixas   = faixas.length;          // linhas 1..numFaixas
-  const linhaBloco  = numFaixas + 1;           // linha dos títulos de blocos
-  const linhaCols   = numFaixas + 2;           // linha dos títulos de colunas
+  const numFaixas   = faixas.length;          
+  const linhaBloco  = numFaixas + 1;           
+  const linhaCols   = numFaixas + 2;           
 
-  // Garantir colunas suficientes
   const curCols = sheet.getMaxColumns();
   if (totalCols > curCols) {
     sheet.insertColumnsAfter(curCols, totalCols - curCols);
@@ -269,15 +259,17 @@ function construtor_aplicarLayout_(sheet, cfg) {
   faixas.forEach(function(faixa, i) {
     var row = i + 1;
     sheet.setRowHeight(row, faixa.altura || 28);
-    if (totalCols > 1) {
-      try { sheet.getRange(row, 1, 1, totalCols).merge(); } catch(e) {}
-    }
+    
+    // CORREÇÃO: Mescla apenas as colunas A, B e C (1 a 3) como no Print 1
+    try { sheet.getRange(row, 1, 1, 3).merge(); } catch(e) {}
+    
     var c = sheet.getRange(row, 1);
     c.setValue(faixa.texto || '');
     c.setBackground(faixa.bgColor || '#1F3864');
     c.setFontColor(faixa.fontColor || '#FFFFFF');
     c.setFontSize(11);
     c.setFontWeight(faixa.negrito !== false ? 'bold' : 'normal');
+    c.setFontStyle('italic'); // CORREÇÃO: Adicionado itálico
     c.setHorizontalAlignment('center');
     c.setVerticalAlignment('middle');
     c.setWrap(true);
@@ -298,6 +290,7 @@ function construtor_aplicarLayout_(sheet, cfg) {
     c.setFontColor(bloco.fontColor || '#FFFFFF');
     c.setFontSize(9);
     c.setFontWeight('bold');
+    c.setFontStyle('italic'); // CORREÇÃO: Adicionado itálico
     c.setHorizontalAlignment('center');
     c.setVerticalAlignment('middle');
     offset += nc;
@@ -307,15 +300,18 @@ function construtor_aplicarLayout_(sheet, cfg) {
   sheet.setRowHeight(linhaCols, cfg.alturaLinhaCabecalho || 46);
   offset = 1;
   blocos.forEach(function(bloco) {
-    var escuro = construtor_darkenColor_(bloco.bgColor || '#4472C4', 25);
     (bloco.colunas || []).forEach(function(col) {
       sheet.setColumnWidth(offset, col.largura || 100);
       var c = sheet.getRange(linhaCols, offset);
       c.setValue(col.titulo || '');
-      c.setBackground(escuro);
-      c.setFontColor(bloco.fontColor || '#FFFFFF');
+      
+      // CORREÇÃO: Fundo clarinho e texto preto em itálico, idêntico ao Print 1
+      c.setBackground('#f3f3f3');
+      c.setFontColor('#000000');
       c.setFontSize(8);
       c.setFontWeight('bold');
+      c.setFontStyle('italic');
+      
       c.setHorizontalAlignment('center');
       c.setVerticalAlignment('middle');
       c.setWrap(true);
@@ -327,7 +323,7 @@ function construtor_aplicarLayout_(sheet, cfg) {
   if (cfg.bordas !== false) {
     sheet.getRange(1, 1, linhaCols, totalCols)
       .setBorder(true, true, true, true, true, true,
-                 '#FFFFFF', SpreadsheetApp.BorderStyle.SOLID);
+                 '#000000', SpreadsheetApp.BorderStyle.SOLID);
   }
 
   // ── Congelar linhas ──────────────────────────────────────────────────────
@@ -337,7 +333,6 @@ function construtor_aplicarLayout_(sheet, cfg) {
   // ── Pré-formatar linhas de dados ─────────────────────────────────────────
   var altDados  = cfg.alturaLinhasDados || 21;
   var maxRows   = sheet.getMaxRows();
-  // Pré-formata até 200 linhas para evitar lentidão de chamadas individuais ao Sheets
   var batchSize = Math.min(200, maxRows - linhaCols);
   if (batchSize > 0) {
     for (var r = linhaCols + 1; r <= linhaCols + batchSize; r++) {
@@ -349,17 +344,6 @@ function construtor_aplicarLayout_(sheet, cfg) {
                    '#CCCCCC', SpreadsheetApp.BorderStyle.SOLID);
     }
   }
-}
-
-function construtor_darkenColor_(hex, amount) {
-  try {
-    var h = hex.replace('#', '');
-    if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
-    var r = Math.max(0, parseInt(h.substring(0,2), 16) - amount);
-    var g = Math.max(0, parseInt(h.substring(2,4), 16) - amount);
-    var b = Math.max(0, parseInt(h.substring(4,6), 16) - amount);
-    return '#' + [r,g,b].map(function(v) { return v.toString(16).padStart(2,'0'); }).join('');
-  } catch(e) { return hex; }
 }
 
 // ─── Helpers de mapeamento de colunas ────────────────────────────────────────
@@ -378,7 +362,7 @@ function construtor_colIndex_(cfg, colId) {
 }
 
 function construtor_linhaInicioDados_(cfg) {
-  return (cfg.faixas || []).length + 3; // faixas + blocos + colunas + 1
+  return (cfg.faixas || []).length + 3;
 }
 
 // ─── Validação de dados ───────────────────────────────────────────────────────
