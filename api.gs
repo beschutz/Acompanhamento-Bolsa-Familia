@@ -161,6 +161,10 @@ function apiPanel(params) {
       return jsonOut({ ok: true, msg: "Checkpoints do pipeline removidos." });
     }
 
+    if (action === "get_pipeline_results") {
+      return jsonOut(getPipelineResults_());
+    }
+
     // ── Ingestão de Mapas (upload do painel, substitui etapa Python/Colab) ───
     if (action === "ingest_mapas") {
       return jsonOut(handleIngestMapas_(params));
@@ -798,6 +802,58 @@ function updateHistory(t) {
 
 function jsonOut(o) { 
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); 
+}
+
+// =================================================================================
+// RESULTADOS DO PIPELINE — links das planilhas geradas
+// =================================================================================
+
+/**
+ * Lê os checkpoints do pipeline (criar + distribuir) e retorna a lista de
+ * unidades com links para a planilha (Google Sheets) e pasta (Google Drive).
+ *
+ * @returns {{ ok: boolean, data: Array<{nome, ssId, folderId, folderMsg}> }}
+ */
+function getPipelineResults_() {
+  try {
+    const cfg = CONFIG_PIPELINE;
+    const cpCriar     = loadCheckpoint(cfg.checkpointKeys.criar);
+    const cpDistribuir = loadCheckpoint(cfg.checkpointKeys.distribuir);
+
+    if (!cpCriar || !cpCriar.criadas) {
+      return { ok: true, data: [] };
+    }
+
+    // Monta mapa nome → folderId a partir do checkpoint de distribuição
+    const folderMap = {};
+    if (cpDistribuir && Array.isArray(cpDistribuir.lista)) {
+      cpDistribuir.lista.forEach(function(item) {
+        if (item.movida && item.folderId) {
+          folderMap[item.nome] = item.folderId;
+        }
+      });
+    }
+
+    // Também verifica pastasUnidades (pastas específicas por unidade)
+    const pastasUnidades = cfg.pastasUnidades || {};
+
+    const items = Object.entries(cpCriar.criadas)
+      .filter(function(e) { return !String(e[1]).startsWith('ERRO:'); })
+      .map(function(e) {
+        const nome = e[0];
+        const ssId = e[1];
+        const folderId = pastasUnidades[nome] || folderMap[nome] || '';
+        const folderMsg = !folderId ? 'pasta não mapeada (configure pastasUnidades ou execute Etapa 2)' : '';
+        return { nome: nome, ssId: ssId, folderId: folderId, folderMsg: folderMsg };
+      });
+
+    // Ordena por nome
+    items.sort(function(a, b) { return a.nome < b.nome ? -1 : a.nome > b.nome ? 1 : 0; });
+
+    return { ok: true, data: items };
+  } catch (e) {
+    return { ok: false, err: 'Erro ao obter resultados do pipeline: ' + e.message };
+  }
 }
 
 function formatDate(d) { 
