@@ -175,6 +175,22 @@ function apiPanel(params) {
       return jsonOut({ ok: true, data: data });
     }
 
+    // ── Diagnóstico e limpeza de quota de propriedades ───────────────────────
+    if (action === "get_properties_usage") {
+      const info = (typeof getScriptPropertiesUsageInfo !== 'undefined')
+        ? getScriptPropertiesUsageInfo()
+        : null;
+      return jsonOut({ ok: true, data: info });
+    }
+
+    if (action === "limpar_properties_emergencia") {
+      const manterStats = params.manter_estatisticas !== 'false';
+      const resultado = (typeof limparPropertiesEmergencia !== 'undefined')
+        ? limparPropertiesEmergencia(manterStats)
+        : null;
+      return jsonOut({ ok: true, data: resultado });
+    }
+
     return jsonOut({ ok: false, err: "Ação desconhecida pelo Painel." });
 
     
