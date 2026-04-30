@@ -399,24 +399,29 @@ function _pipeline_criarPlanilhaUnidade(nomeUnidade, pacientes, tpl, pastaOrigem
   // Linha de início dos dados = faixas + bloco-títulos + cabeçalho + 1
   const linhaInicio = (tpl.config.faixas || []).length + 3;
 
-  // Monta a matriz de dados para escrita em batch
+  // Monta a matriz de dados para escrita em batch.
+  // A ordem das colunas deve coincidir exatamente com o template padrão
+  // definido em ConstrutorPlanilhas.gs (bloco_identificacao → bloco_acomp_us
+  // → bloco_criancas → bloco_gestantes → bloco_contato → bloco_extras).
   const matriz = pacientes.map(function(l) {
     return [
-      l[cols.NIS]           || '',  // Col 1: NIS
-      l[cols.CNS]           || '',  // Col 2: CNS
-      l[cols.CPF]           || '',  // Col 3: CPF
-      l[cols.NOME_PACIENTE] || '',  // Col 4: NOME
-      l[cols.DATA_NASC]     || '',  // Col 5: NASC.
-      l[cols.IDADE]         || '',  // Col 6: IDADE
-      '',                            // Col 7: ACOMP. NA US (a preencher pela equipe)
-      l[cols.DATA_ACOMP]    || '',  // Col 8: DATA ACOMP.
-      l[cols.PESO]          || '',  // Col 9: PESO
-      l[cols.ALTURA]        || '',  // Col 10: ALTURA
-      l[cols.VACINACAO]     || '',  // Col 11: VACINAÇÃO
-      l[cols.GESTANTE]      || '',  // Col 12: GESTANTE
-      l[cols.DUM]           || '',  // Col 13: DUM
-      l[cols.PRE_NATAL]     || '',  // Col 14: PRÉ-NATAL
-      ''                             // Col 15: ACOMP. NO E-GESTOR (a preencher)
+      l[cols.NIS]           || '',  // Col  1: NIS
+      l[cols.CPF]           || '',  // Col  2: CPF
+      l[cols.NOME_PACIENTE] || '',  // Col  3: NOME
+      l[cols.DATA_NASC]     || '',  // Col  4: DATA NASCIMENTO
+      '',                            // Col  5: ACOMP. NA US (a preencher pela equipe)
+      l[cols.DATA_ACOMP]    || '',  // Col  6: DATA ACOMPANHAMENTO
+      l[cols.PESO]          || '',  // Col  7: PESO (kg)
+      l[cols.ALTURA]        || '',  // Col  8: ALTURA (cm)
+      l[cols.VACINACAO]     || '',  // Col  9: VACINA
+      '',                            // Col 10: MOTIVO NÃO VACINAÇÃO (vazio)
+      l[cols.GESTANTE]      || '',  // Col 11: GESTANTE
+      l[cols.DUM]           || '',  // Col 12: DUM
+      l[cols.PRE_NATAL]     || '',  // Col 13: PRÉ-NATAL
+      '',                            // Col 14: TELEFONE (vazio)
+      '',                            // Col 15: ENDEREÇO (vazio)
+      '',                            // Col 16: ACOMP. NO E-GESTOR (a preencher)
+      ''                             // Col 17: OBSERVAÇÕES (vazio)
     ];
   });
 
