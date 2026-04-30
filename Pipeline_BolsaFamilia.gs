@@ -39,6 +39,28 @@
 function runPipelineCompleto() {
   logPadrao('PIPELINE', 'Iniciando pipeline completo...');
 
+  // ── Garantir espaço na quota antes de iniciar ────────────────────────────
+  // Se a quota estiver perto do limite, limpa checkpoints e dados de alto volume
+  // para evitar o erro "property storage quota exceeded" durante a execução.
+  _pipeline_garantirQuotaDisponivel_();
+
+  // ── Auto-reset quando todas as etapas já estão CONCLUIDAS ────────────────
+  // Indica que um ciclo anterior terminou com sucesso. Limpa os checkpoints
+  // automaticamente para que o novo ciclo reprocesse tudo do zero.
+  const keys = CONFIG_PIPELINE.checkpointKeys;
+  const cpCriar      = loadCheckpoint(keys.criar);
+  const cpDistribuir = loadCheckpoint(keys.distribuir);
+  const cpValidacoes = loadCheckpoint(keys.validacoes);
+  const todasConcluidas =
+    cpCriar      && cpCriar.fase      === 'CONCLUIDO' &&
+    cpDistribuir && cpDistribuir.fase === 'CONCLUIDO' &&
+    cpValidacoes && cpValidacoes.fase === 'CONCLUIDO';
+
+  if (todasConcluidas) {
+    logPadrao('PIPELINE', 'Ciclo anterior já concluído — reiniciando checkpoints para novo ciclo.', 'AVISO');
+    clearAllPipelineCheckpoints();
+  }
+
   const r1 = etapaCriarPlanilhasPorUnidade();
   if (!r1.concluido) {
     logPadrao('PIPELINE', 'Etapa 1 pausada. Reexecute para continuar.', 'AVISO');
@@ -64,6 +86,33 @@ function runPipelineCompleto() {
   return 'Pipeline completo finalizado com sucesso!';
 }
 
+/**
+ * Verifica se a quota de ScriptProperties está próxima do limite (> 80 %).
+ * Se estiver, executa uma limpeza automática de dados de alto volume
+ * (checkpoints legados, templates, log de auditoria) para garantir espaço.
+ * @private
+ */
+function _pipeline_garantirQuotaDisponivel_() {
+  try {
+    const info = getScriptPropertiesUsageInfo();
+    const LIMITE_ALERTA = 0.80; // 80 % da quota de 500 KB
+    const uso = info.totalBytes / (info.quotaKB * 1024);
+
+    if (uso > LIMITE_ALERTA) {
+      logPadrao('PIPELINE',
+        'Quota de propriedades em ' + info.percentual + ' (' + info.totalKB + ' KB / ' + info.quotaKB + ' KB). ' +
+        'Iniciando limpeza automática para liberar espaço…', 'AVISO');
+      limparPropertiesEmergencia(true); // mantém estatísticas, remove dados de alto volume
+      const infoPos = getScriptPropertiesUsageInfo();
+      logPadrao('PIPELINE',
+        'Quota após limpeza: ' + infoPos.totalKB + ' KB / ' + info.quotaKB + ' KB (' + infoPos.percentual + ').');
+    }
+  } catch (e) {
+    // Falha no diagnóstico não deve travar o pipeline
+    logPadrao('PIPELINE', 'Aviso: não foi possível verificar quota de propriedades — ' + e.message, 'AVISO');
+  }
+}
+
 // =============================================================================
 // ETAPA 1 — CRIAR PLANILHAS POR UNIDADE
 // =============================================================================
@@ -85,6 +134,16 @@ function etapaCriarPlanilhasPorUnidade() {
 
   // ── Carregar ou inicializar checkpoint ────────────────────────────────────
   let cp = loadCheckpoint(cpKey) || { fase: 'MAPEAMENTO', lista: [], indice: 0, criadas: {} };
+
+  // ── Migração: checkpoint legado armazena objetos { nome, pacientes } em lista ─
+  // Converte para o formato enxuto (apenas nomes) para liberar quota de propriedades.
+  if (cp.lista.length > 0 && typeof cp.lista[0] === 'object' && cp.lista[0] !== null &&
+      cp.lista[0].pacientes !== undefined) {
+    logPadrao(MOD, 'Checkpoint legado detectado (contém dados de pacientes). Migrando para formato compacto…', 'AVISO');
+    cp.lista = cp.lista.map(function(item) { return item.nome || ''; }).filter(Boolean);
+    saveCheckpoint(cpKey, cp);
+    logPadrao(MOD, 'Migração de checkpoint concluída. Quota liberada.');
+  }
 
   if (cp.fase === 'MAPEAMENTO') {
     logPadrao(MOD, 'Carregando dados da planilha consolidada...');
@@ -118,16 +177,20 @@ function etapaCriarPlanilhasPorUnidade() {
 
     const linhas = dados.slice(1); // Remove cabeçalho
 
-    // Agrupamento: { nomeUnidade → [linha, ...] }
-    const grupos = {};
+    // Extrai apenas os nomes de unidades (sem dados de pacientes).
+    // Os dados de pacientes são carregados sob demanda durante o PROCESSAMENTO
+    // para evitar estouro da quota de armazenamento de propriedades (500 KB).
+    const nomesVistos = {};
+    const nomesOrdenados = [];
     for (const l of linhas) {
       const nome = String(l[colUN] || '').trim();
-      if (!nome) continue;
-      if (!grupos[nome]) grupos[nome] = [];
-      grupos[nome].push(l);
+      if (nome && !nomesVistos[nome]) {
+        nomesVistos[nome] = true;
+        nomesOrdenados.push(nome);
+      }
     }
 
-    cp.lista   = Object.keys(grupos).map(function(n) { return { nome: n, pacientes: grupos[n] }; });
+    cp.lista   = nomesOrdenados; // Apenas strings — NÃO armazena dados de pacientes
     cp.indice  = 0;
     cp.criadas = {};
     cp.fase    = 'PROCESSAMENTO';
@@ -156,6 +219,31 @@ function etapaCriarPlanilhasPorUnidade() {
     // Mapeamento de colunas do checkpoint (garante consistência entre rodadas)
     const colIdx = cp.colIdx || cfg.colunasConsolidada;
 
+    // Cache em memória dos dados da planilha consolidada agrupados por unidade.
+    // Carregado uma única vez por execução — NÃO é persistido em propriedades.
+    let gruposPacientes = null;
+
+    function _obterPacientesDaUnidade_(nomeUnidade) {
+      if (!gruposPacientes) {
+        if (!cfg.idPlanilhaConsolidada) throw new Error('idPlanilhaConsolidada não configurado.');
+        const ss  = SpreadsheetApp.openById(cfg.idPlanilhaConsolidada);
+        const aba = ss.getSheetByName(cfg.nomeAbaConsolidada);
+        if (!aba) throw new Error('Aba "' + cfg.nomeAbaConsolidada + '" não encontrada.');
+        const linhasComHeader = aba.getDataRange().getDisplayValues();
+        const linhas = linhasComHeader.slice(1);
+        const colUN  = colIdx.NOME_UNIDADE;
+        gruposPacientes = {};
+        for (const l of linhas) {
+          const nome = String(l[colUN] || '').trim();
+          if (nome) {
+            if (!gruposPacientes[nome]) gruposPacientes[nome] = [];
+            gruposPacientes[nome].push(l);
+          }
+        }
+      }
+      return gruposPacientes[nomeUnidade] || [];
+    }
+
     while (cp.indice < cp.lista.length) {
       if (budget.exceeded()) {
         saveCheckpoint(cpKey, cp);
@@ -164,22 +252,28 @@ function etapaCriarPlanilhasPorUnidade() {
         return { concluido: false, msg: msg, criadas: Object.keys(cp.criadas).length };
       }
 
-      const item = cp.lista[cp.indice];
-      logPadrao(MOD, '[' + (cp.indice + 1) + '/' + cp.lista.length + '] Processando: ' + item.nome);
+      const nomeUnidade = cp.lista[cp.indice];
+      logPadrao(MOD, '[' + (cp.indice + 1) + '/' + cp.lista.length + '] Processando: ' + nomeUnidade);
 
-      // Idempotência: pula se já foi criada
-      if (!cp.criadas[item.nome]) {
+      // Idempotência: pula apenas unidades criadas COM SUCESSO.
+      // Unidades com erro anterior (valor começa com 'ERRO:') são reprocessadas.
+      const registroAnterior = cp.criadas[nomeUnidade];
+      const jaCriadaComSucesso = registroAnterior && !String(registroAnterior).startsWith('ERRO:');
+
+      if (!jaCriadaComSucesso) {
         try {
-          const ssId = _pipeline_criarPlanilhaUnidade(item.nome, item.pacientes, tpl, pastaOrigem, cfg, colIdx);
-          cp.criadas[item.nome] = ssId;
-          logPadrao(MOD, 'Planilha criada: ' + item.nome + ' (' + ssId + ')');
+          const pacientes = _obterPacientesDaUnidade_(nomeUnidade);
+          const ssId = _pipeline_criarPlanilhaUnidade(nomeUnidade, pacientes, tpl, pastaOrigem, cfg, colIdx);
+          cp.criadas[nomeUnidade] = ssId;
+          logPadrao(MOD, 'Planilha criada: ' + nomeUnidade + ' (' + ssId + ')');
         } catch (e) {
-          logPadrao(MOD, 'Erro em "' + item.nome + '": ' + e.message, 'ERRO');
-          // Registra o erro mas continua para não travar o pipeline
-          cp.criadas[item.nome] = 'ERRO:' + e.message;
+          logPadrao(MOD, 'Erro em "' + nomeUnidade + '": ' + e.message, 'ERRO');
+          // Registra o erro mas continua para não travar o pipeline.
+          // Na próxima execução a unidade será reprocessada automaticamente.
+          cp.criadas[nomeUnidade] = 'ERRO:' + e.message;
         }
       } else {
-        logPadrao(MOD, 'Já criada (checkpoint): ' + item.nome);
+        logPadrao(MOD, 'Já criada (checkpoint): ' + nomeUnidade);
       }
 
       cp.indice++;
@@ -289,7 +383,18 @@ function _pipeline_criarPlanilhaUnidade(nomeUnidade, pacientes, tpl, pastaOrigem
 
   // Reabre para escrever os dados (construtor_criarPlanilha já fez flush)
   const sheet = SpreadsheetApp.openById(ssId).getSheetByName(cfg.nomeAbaVigencia);
-  if (!sheet) return ssId;
+  if (!sheet) {
+    // A aba não foi encontrada pelo nome configurado em nomeAbaVigencia.
+    // Causa mais comum: o template usa um nomeAba diferente do que está em
+    // Config_Pipeline.gs (nomeAbaVigencia). Verifique se ambos coincidem.
+    const abasExistentes = SpreadsheetApp.openById(ssId).getSheets().map(function(s) { return s.getName(); });
+    logPadrao('CRIAR',
+      'Aba "' + cfg.nomeAbaVigencia + '" não encontrada em "' + nomeUnidade + '" após criação. ' +
+      'Abas existentes: [' + abasExistentes.join(', ') + ']. ' +
+      'Verifique se nomeAbaVigencia em Config_Pipeline.gs coincide com o nomeAba do template no Construtor.',
+      'ERRO');
+    return ssId; // planilha criada mas sem dados
+  }
 
   // Linha de início dos dados = faixas + bloco-títulos + cabeçalho + 1
   const linhaInicio = (tpl.config.faixas || []).length + 3;
