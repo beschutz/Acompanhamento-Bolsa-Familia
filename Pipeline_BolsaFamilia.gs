@@ -208,7 +208,7 @@ function etapaCriarPlanilhasPorUnidade() {
  * @private
  */
 function _pipeline_mapearColunasPorCabecalho_(headerRow, cfgColunas, mod) {
-  // Normaliza um nome de coluna: maiúsculas, sem acentos, sem espaços extras
+  // Normaliza um nome de coluna: maiúsculas, sem acentos, espaços → sublinhado
   function norm(s) {
     return String(s || '')
       .trim()
