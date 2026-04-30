@@ -39,6 +39,28 @@
     let CONFIG_ATUAL_SERVIDOR = null;
 
     // =================================================================
+    // 📅 VIGÊNCIAS — lista dinâmica (persiste via GM storage)
+    // =================================================================
+    const VIGENCIAS_DEFAULT = ["2026/1", "2026/2", "2027/1", "2027/2", "2028/1", "2028/2"];
+    const VIGENCIAS_STORAGE_KEY = 'vigencias_list';
+    const VIGENCIA_FORMAT = /^\d{4}\/[12]$/;
+
+    function getVigenciasList() {
+        try {
+            const stored = GM_getValue(VIGENCIAS_STORAGE_KEY, '');
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+            }
+        } catch(e) {}
+        return VIGENCIAS_DEFAULT.slice();
+    }
+
+    function saveVigenciasList(list) {
+        GM_setValue(VIGENCIAS_STORAGE_KEY, JSON.stringify(list));
+    }
+
+    // =================================================================
     // 🔐 FUNÇÕES DE SEGURANÇA E LOGIN
     // =================================================================
 
@@ -236,10 +258,10 @@
                         <div class="nav-section-label">Principal</div>
                         <div id="nav-dashboard" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">dashboard</span> Dashboard</div>
                         <div id="nav-planilhas" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">table_chart</span> Gestão Planilhas</div>
-                        <div id="nav-pipeline" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">account_tree</span> Pipeline Unidades</div>
-                        <div id="nav-config" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">settings</span> Configuração</div>
                         <div id="nav-condicionalidades" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">rule_settings</span> Condicionalidades</div>
+                        <div id="nav-config" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">settings</span> Configurações</div>
                         <div id="nav-construtor" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">build</span> Construtor</div>
+                        <div id="nav-pipeline" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">map</span> Gerador de Mapas</div>
                         <div style="height:1px;background:rgba(255,255,255,0.04);margin:14px 4px;"></div>
                         <div class="nav-section-label">Sistemas Externos</div>
                         <div id="nav-egestor" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">public</span> e-Gestor Login</div>
@@ -486,11 +508,11 @@
     }
 
     function renderConfig(container) {
-        const vigencias = ["2026/1", "2026/2", "2027/1", "2027/2", "2028/1", "2028/2"];
+        const vigencias = getVigenciasList();
         container.innerHTML = `
             <div class="animate-fade" style="max-width:680px;margin:0 auto;">
                 <div style="margin-bottom:32px;">
-                    <h1 style="font-size:26px;font-weight:900;color:white;letter-spacing:-0.5px;font-style:italic;text-transform:uppercase;margin:0;">Configuração</h1>
+                    <h1 style="font-size:26px;font-weight:900;color:white;letter-spacing:-0.5px;font-style:italic;text-transform:uppercase;margin:0;">Configurações</h1>
                     <p style="font-size:12px;color:#475569;margin-top:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Vigência Ativa e Links das Pastas</p>
                 </div>
                 <div class="glass-card" style="padding:28px;">
@@ -521,6 +543,17 @@
                         </div>
                     </div>
                     <button id="btn-save-cfg" style="width:100%;background:linear-gradient(135deg,#6366f1,#818cf8);border:none;color:white;font-weight:800;padding:16px 24px;border-radius:14px;cursor:pointer;font-size:11px;letter-spacing:0.15em;text-transform:uppercase;transition:all 0.2s;box-shadow:0 4px 24px rgba(99,102,241,0.3);">SALVAR PARA TODA A EQUIPE</button>
+                </div>
+
+                <!-- ── Gerenciar Vigências ── -->
+                <div class="glass-card" style="padding:28px;margin-top:16px;">
+                    <div style="font-size:10px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:14px;">Gerenciar Vigências</div>
+                    <div id="cfg-vigencias-chips" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;min-height:32px;"></div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input id="cfg-nova-vigencia" class="glass-input" placeholder="Ex.: 2029/1 (formato AAAA/1 ou AAAA/2)" style="flex:1;">
+                        <button id="cfg-btn-add-vigencia" style="background:linear-gradient(135deg,#10b981,#34d399);border:none;color:white;font-weight:800;padding:12px 16px;border-radius:10px;cursor:pointer;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;white-space:nowrap;">+ ADICIONAR</button>
+                    </div>
+                    <div id="cfg-vigencia-feedback" style="font-size:10px;margin-top:8px;min-height:16px;"></div>
                 </div>
             </div>
         `;
@@ -562,10 +595,80 @@
             const d = `action=save_config&api_target=panel&token=${TOKEN_ACESSO}&vigencia_nome=${dropdown.value}&folder_norte=${idN}&folder_sul=${idS}&folder_leste=${idL}&folder_oeste=${idO}`;
             GM_xmlhttpRequest({ method: "POST", url: URL_APPS_SCRIPT, headers: { "Content-Type": "application/x-www-form-urlencoded" }, data: d, onload: () => { window.showToast("Configuração Salva!"); this.innerText = "SALVAR PARA TODA A EQUIPE"; CONFIG_ATUAL_SERVIDOR = { vigencia: dropdown.value, NORTE: idN, SUL: idS, LESTE: idL, OESTE: idO }; } });
         };
+
+        // ── Gerenciar Vigências ───────────────────────────────────────
+        const chipsEl   = document.getElementById('cfg-vigencias-chips');
+        const novaInput = document.getElementById('cfg-nova-vigencia');
+        const addBtn    = document.getElementById('cfg-btn-add-vigencia');
+        const feedbackEl = document.getElementById('cfg-vigencia-feedback');
+
+        function renderVigenciasChips() {
+            const list = getVigenciasList();
+            chipsEl.innerHTML = list.map((v, i) => `
+                <div style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;border:1px solid rgba(99,102,241,0.35);background:rgba(99,102,241,0.1);color:#a5b4fc;font-size:10px;font-weight:800;">
+                    ${v}
+                    ${VIGENCIAS_DEFAULT.includes(v) ? '' : `<span data-rm-vig="${i}" style="cursor:pointer;color:#f87171;font-size:12px;line-height:1;" title="Remover">✕</span>`}
+                </div>
+            `).join('');
+            chipsEl.querySelectorAll('[data-rm-vig]').forEach(btn => {
+                btn.onclick = () => {
+                    const idx = parseInt(btn.dataset.rmVig, 10);
+                    const updated = getVigenciasList();
+                    updated.splice(idx, 1);
+                    saveVigenciasList(updated);
+                    renderVigenciasChips();
+                    // Rebuild the dropdown
+                    const sel = document.getElementById('c-nom');
+                    const cur = sel ? sel.value : '';
+                    if (sel) {
+                        sel.innerHTML = `<option value="" disabled>Selecionar vigência...</option>` +
+                            updated.map(vv => `<option value="${vv}" style="background:#0d1835">${vv}</option>`).join('');
+                        if (updated.includes(cur)) sel.value = cur;
+                    }
+                    window.showToast('Vigência removida.', 'success');
+                };
+            });
+        }
+
+        addBtn.onclick = () => {
+            feedbackEl.textContent = '';
+            const val = novaInput.value.trim();
+            if (!VIGENCIA_FORMAT.test(val)) {
+                feedbackEl.style.color = '#f87171';
+                feedbackEl.textContent = 'Formato inválido. Use AAAA/1 ou AAAA/2 (ex.: 2029/1).';
+                return;
+            }
+            const list = getVigenciasList();
+            if (list.includes(val)) {
+                feedbackEl.style.color = '#fbbf24';
+                feedbackEl.textContent = `"${val}" já existe na lista.`;
+                return;
+            }
+            list.push(val);
+            list.sort();
+            saveVigenciasList(list);
+            novaInput.value = '';
+            renderVigenciasChips();
+            // Rebuild the dropdown
+            const sel = document.getElementById('c-nom');
+            if (sel) {
+                const cur = sel.value;
+                sel.innerHTML = `<option value="" disabled>Selecionar vigência...</option>` +
+                    list.map(vv => `<option value="${vv}" style="background:#0d1835">${vv}</option>`).join('');
+                if (list.includes(cur)) sel.value = cur;
+            }
+            feedbackEl.style.color = '#34d399';
+            feedbackEl.textContent = `"${val}" adicionada com sucesso.`;
+            window.showToast(`Vigência "${val}" adicionada!`, 'success');
+        };
+
+        novaInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addBtn.click(); });
+
+        renderVigenciasChips();
     }
 
     function renderCondicionalidades(container) {
-        const vigencias = ["2026/1", "2026/2", "2027/1", "2027/2", "2028/1", "2028/2"];
+        const vigencias = getVigenciasList();
         const baseConfig = () => ({
             version: 1,
             defaults: {
@@ -924,11 +1027,29 @@
     }
 
 function renderPlanilhas(container) {
+  const vigencias = getVigenciasList();
+  const vigSelecionada = GM_getValue('planilhas_vigencia_selecionada', vigencias[0] || '');
+
   container.innerHTML = `
     <div class="animate-fade" style="max-width:860px;margin:0 auto;">
       <div style="margin-bottom:32px;border-bottom:1px solid rgba(255,255,255,0.05);padding-bottom:20px;">
         <h2 style="font-size:26px;font-weight:900;color:white;letter-spacing:-0.5px;font-style:italic;text-transform:uppercase;margin:0;">Gestão Planilhas</h2>
         <p style="font-size:12px;color:#475569;margin-top:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Controle de importação e distribuição das Zonas</p>
+      </div>
+
+      <!-- ===== SELETOR DE VIGÊNCIA ===== -->
+      <div class="glass-card" style="padding:16px 18px;margin-bottom:16px;border:1px solid rgba(99,102,241,0.16);background:rgba(99,102,241,0.04);">
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:180px;">
+            <label style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.12em;display:block;margin-bottom:6px;">Vigência desta seção</label>
+            <select id="planilhas-vigencia-select" class="glass-input" style="cursor:pointer;">
+              ${vigencias.map(v => `<option value="${v}" style="background:#0d1835" ${v === vigSelecionada ? 'selected' : ''}>${v}</option>`).join('')}
+            </select>
+          </div>
+          <div id="planilhas-vigencia-badge" style="padding:6px 12px;border-radius:999px;border:1px solid rgba(99,102,241,0.35);background:rgba(99,102,241,0.1);color:#a5b4fc;font-size:10px;font-weight:900;letter-spacing:0.1em;text-transform:uppercase;margin-top:14px;">
+            ${vigSelecionada || '—'}
+          </div>
+        </div>
       </div>
 
       <div class="glass-card" style="padding:20px;margin-bottom:16px;">
@@ -1068,6 +1189,18 @@ function renderPlanilhas(container) {
     logBox.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${m}</div>`;
     logBox.scrollTop = logBox.scrollHeight;
   };
+
+  // ── Vigência selector handler ────────────────────────────────────────────
+  const vigSelect = document.getElementById('planilhas-vigencia-select');
+  const vigBadge  = document.getElementById('planilhas-vigencia-badge');
+  if (vigSelect) {
+    vigSelect.addEventListener('change', () => {
+      const v = vigSelect.value;
+      GM_setValue('planilhas_vigencia_selecionada', v);
+      if (vigBadge) vigBadge.textContent = v;
+      log(`Vigência selecionada: ${v}`);
+    });
+  }
 
   const regionMeta = {
     TODAS: { id: 'todas', nome: 'TODAS' },
@@ -2308,7 +2441,7 @@ renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
         container.innerHTML = `
         <div class="animate-fade" style="max-width:860px;margin:0 auto;">
             <div style="margin-bottom:28px;border-bottom:1px solid rgba(255,255,255,0.05);padding-bottom:18px;">
-                <h2 style="font-size:26px;font-weight:900;color:white;letter-spacing:-0.5px;font-style:italic;text-transform:uppercase;margin:0;">Pipeline Unidades</h2>
+                <h2 style="font-size:26px;font-weight:900;color:white;letter-spacing:-0.5px;font-style:italic;text-transform:uppercase;margin:0;">Gerador de Mapas</h2>
                 <p style="font-size:12px;color:#475569;margin-top:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Descarregar Mapas • Criar • Distribuir • Corrigir Validações</p>
             </div>
 
@@ -2422,6 +2555,19 @@ renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
                 style="width:100%;padding:12px;font-size:9px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;border-radius:12px;color:#f87171;border-color:rgba(239,68,68,0.25);">
                 <span class="material-symbols-rounded" style="font-size:14px;vertical-align:middle;">restart_alt</span> Resetar Checkpoints
             </button>
+
+            <!-- RESULTADOS / LINKS DAS PASTAS -->
+            <div class="glass-card" style="padding:18px 20px;margin-top:16px;border:1px solid rgba(99,102,241,0.15);">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                    <div style="font-size:9px;font-weight:900;color:#475569;text-transform:uppercase;letter-spacing:0.14em;">Resultados · Links das Planilhas</div>
+                    <button id="btn-pipeline-results" class="btn-glass" style="padding:8px 12px;font-size:9px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;border-radius:10px;">
+                        <span class="material-symbols-rounded" style="font-size:14px;vertical-align:middle;">folder_open</span> Carregar Links
+                    </button>
+                </div>
+                <div id="pipeline-results-list" style="font-size:10px;color:#94a3b8;">
+                    Clique em "Carregar Links" após o pipeline para ver os arquivos gerados e suas pastas.
+                </div>
+            </div>
         </div>`;
 
         const logEl = document.getElementById('pipeline-log');
@@ -2670,6 +2816,32 @@ renderCycleSummary(snapBefore, snapAfter, Date.now() - t0);
             const res = await apiP('reset_pipeline');
             log(res.ok ? '🔄 ' + res.msg : '❌ ' + (res.err || 'Erro'));
             refreshStatus();
+        };
+
+        // ── Resultados / Links das Pastas ─────────────────────────────────────
+        const resultsEl = document.getElementById('pipeline-results-list');
+        document.getElementById('btn-pipeline-results').onclick = async () => {
+            if (resultsEl) resultsEl.innerHTML = '<span style="color:#fbbf24;">Carregando...</span>';
+            const res = await apiP('get_pipeline_results');
+            if (!res || !res.ok) {
+                if (resultsEl) resultsEl.innerHTML = `<span style="color:#f87171;">Erro ao carregar resultados: ${res && res.err ? res.err : 'sem resposta'}</span>`;
+                return;
+            }
+            const items = res.data || [];
+            if (items.length === 0) {
+                if (resultsEl) resultsEl.innerHTML = '<span style="color:#64748b;">Nenhuma planilha criada ainda. Execute o pipeline primeiro.</span>';
+                return;
+            }
+            if (resultsEl) {
+                resultsEl.innerHTML = items.map(it => {
+                    const ssLink = it.ssId ? `<a href="https://docs.google.com/spreadsheets/d/${it.ssId}" target="_blank" style="color:#60a5fa;text-decoration:underline;margin-left:6px;" title="Abrir planilha">📄 Planilha</a>` : '';
+                    const folderLink = it.folderId ? `<a href="https://drive.google.com/drive/folders/${it.folderId}" target="_blank" style="color:#34d399;text-decoration:underline;margin-left:6px;" title="Abrir pasta">📁 Pasta</a>` : `<span style="color:#475569;margin-left:6px;">Pasta: ${it.folderMsg || 'não distribuída'}</span>`;
+                    return `<div style="display:flex;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);gap:4px;">
+                        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e2e8f0;">${it.nome}</span>
+                        ${ssLink}${folderLink}
+                    </div>`;
+                }).join('');
+            }
         };
 
         refreshStatus();

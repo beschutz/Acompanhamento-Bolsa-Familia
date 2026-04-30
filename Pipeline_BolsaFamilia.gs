@@ -102,11 +102,24 @@ function etapaCriarPlanilhasPorUnidade() {
     }
 
     const dados = aba.getDataRange().getDisplayValues();
+    if (dados.length < 2) {
+      logPadrao(MOD, 'Planilha consolidada sem dados.', 'ERRO');
+      return { concluido: false, msg: 'Erro: planilha consolidada sem dados.' };
+    }
+
+    // ── Mapeamento dinâmico por cabeçalho (robusto a reordenação de colunas) ──
+    const headerRow = dados[0];
+    const colIdx = _pipeline_mapearColunasPorCabecalho_(headerRow, cfg.colunasConsolidada, MOD);
+    const colUN = colIdx.NOME_UNIDADE;
+    if (colUN === undefined || colUN === null) {
+      logPadrao(MOD, 'Coluna NOME_UNIDADE não encontrada no cabeçalho da planilha consolidada.', 'ERRO');
+      return { concluido: false, msg: 'Erro: coluna NOME_UNIDADE não encontrada.' };
+    }
+
     const linhas = dados.slice(1); // Remove cabeçalho
 
     // Agrupamento: { nomeUnidade → [linha, ...] }
     const grupos = {};
-    const colUN = cfg.colunasConsolidada.NOME_UNIDADE;
     for (const l of linhas) {
       const nome = String(l[colUN] || '').trim();
       if (!nome) continue;
@@ -118,6 +131,7 @@ function etapaCriarPlanilhasPorUnidade() {
     cp.indice  = 0;
     cp.criadas = {};
     cp.fase    = 'PROCESSAMENTO';
+    cp.colIdx  = colIdx; // Persiste o mapeamento no checkpoint
     saveCheckpoint(cpKey, cp);
 
     logPadrao(MOD, cp.lista.length + ' unidades mapeadas.');
@@ -139,6 +153,9 @@ function etapaCriarPlanilhasPorUnidade() {
       ? DriveApp.getFolderById(cfg.pastaOrigemId)
       : DriveApp.getRootFolder();
 
+    // Mapeamento de colunas do checkpoint (garante consistência entre rodadas)
+    const colIdx = cp.colIdx || cfg.colunasConsolidada;
+
     while (cp.indice < cp.lista.length) {
       if (budget.exceeded()) {
         saveCheckpoint(cpKey, cp);
@@ -153,7 +170,7 @@ function etapaCriarPlanilhasPorUnidade() {
       // Idempotência: pula se já foi criada
       if (!cp.criadas[item.nome]) {
         try {
-          const ssId = _pipeline_criarPlanilhaUnidade(item.nome, item.pacientes, tpl, pastaOrigem, cfg);
+          const ssId = _pipeline_criarPlanilhaUnidade(item.nome, item.pacientes, tpl, pastaOrigem, cfg, colIdx);
           cp.criadas[item.nome] = ssId;
           logPadrao(MOD, 'Planilha criada: ' + item.nome + ' (' + ssId + ')');
         } catch (e) {
@@ -179,18 +196,90 @@ function etapaCriarPlanilhasPorUnidade() {
 }
 
 /**
+ * Constrói mapeamento nome-de-coluna → índice lendo o cabeçalho real da planilha.
+ * Faz correspondência case-insensitive e com normalização de espaços.
+ * Emite log de aviso para colunas esperadas que não forem encontradas, e
+ * usa o índice fixo do cfg como fallback para manter compatibilidade.
+ *
+ * @param {Array<string>} headerRow   Primeira linha da planilha consolidada.
+ * @param {Object}        cfgColunas  Objeto de índices fixos de Config_Pipeline.gs.
+ * @param {string}        mod         Prefixo de log.
+ * @returns {Object}  Mapeamento { NOME_COLUNA → índice_numérico }.
+ * @private
+ */
+function _pipeline_mapearColunasPorCabecalho_(headerRow, cfgColunas, mod) {
+  // Normaliza um nome de coluna: maiúsculas, sem acentos, sem espaços extras
+  function norm(s) {
+    return String(s || '')
+      .trim()
+      .toUpperCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, '_');
+  }
+
+  // Monta índice invertido: nome_normalizado → posição
+  const headerNorm = headerRow.map(norm);
+
+  const resultado = {};
+  for (const chave in cfgColunas) {
+    // Tenta encontrar pelo nome exato normalizado
+    const idx = headerNorm.indexOf(norm(chave));
+    if (idx >= 0) {
+      resultado[chave] = idx;
+    } else {
+      // Fallback: usa índice fixo do config mas emite aviso
+      const fallback = cfgColunas[chave];
+      resultado[chave] = fallback;
+      logPadrao(mod,
+        'Coluna "' + chave + '" não encontrada no cabeçalho da planilha consolidada. ' +
+        'Usando índice fixo ' + fallback + ' como fallback. ' +
+        'Cabeçalho encontrado: [' + headerRow.slice(0, 20).join(', ') + ']',
+        'AVISO');
+    }
+  }
+  return resultado;
+}
+
+/**
  * Cria uma única planilha para a unidade, aplica o template e escreve os
  * dados dos pacientes em batch.
  * @private
  */
-function _pipeline_criarPlanilhaUnidade(nomeUnidade, pacientes, tpl, pastaOrigem, cfg) {
-  // Cria nova planilha na pasta de origem
+function _pipeline_criarPlanilhaUnidade(nomeUnidade, pacientes, tpl, pastaOrigem, cfg, colIdx) {
+  // colIdx: mapeamento dinâmico por cabeçalho (pode ser igual a cfg.colunasConsolidada)
+  const cols = colIdx || cfg.colunasConsolidada;
+
+  // ── Determina pasta de destino ──────────────────────────────────────────
+  // Prioridade: 1) pastasUnidades[nomeUnidade]  2) pastaOrigem (regional depois)
+  let pastaDestino = pastaOrigem;
+  const pastasUnidades = cfg.pastasUnidades || {};
+  const pastaUnidadeId = pastasUnidades[nomeUnidade];
+  if (pastaUnidadeId) {
+    try {
+      pastaDestino = DriveApp.getFolderById(pastaUnidadeId);
+      logPadrao('CRIAR', 'Pasta específica da unidade encontrada para "' + nomeUnidade + '".');
+    } catch (e) {
+      logPadrao('CRIAR',
+        'Pasta específica configurada para "' + nomeUnidade + '" (ID: ' + pastaUnidadeId +
+        ') não acessível. Usando pasta de origem padrão. Erro: ' + e.message, 'AVISO');
+    }
+  } else if (Object.keys(pastasUnidades).length > 0) {
+    // Mapeamento existe mas não tem entry para esta unidade → aviso, usa fallback
+    logPadrao('CRIAR',
+      'Nenhuma pasta específica configurada para a unidade "' + nomeUnidade +
+      '". Usando pasta de origem padrão.', 'AVISO');
+  }
+
+  // Cria nova planilha na pasta de destino
   const ss = SpreadsheetApp.create(nomeUnidade);
   const ssId = ss.getId();
 
-  // Move para a pasta de origem (por padrão fica em "Meu Drive")
-  if (cfg.pastaOrigemId) {
-    const file = DriveApp.getFileById(ssId);
+  // Move para a pasta de destino (por padrão fica em "Meu Drive")
+  const file = DriveApp.getFileById(ssId);
+  if (pastaDestino.getId() !== DriveApp.getRootFolder().getId()) {
+    pastaDestino.addFile(file);
+    DriveApp.getRootFolder().removeFile(file);
+  } else if (cfg.pastaOrigemId) {
     pastaOrigem.addFile(file);
     DriveApp.getRootFolder().removeFile(file);
   }
@@ -206,7 +295,6 @@ function _pipeline_criarPlanilhaUnidade(nomeUnidade, pacientes, tpl, pastaOrigem
   const linhaInicio = (tpl.config.faixas || []).length + 3;
 
   // Monta a matriz de dados para escrita em batch
-  const cols = cfg.colunasConsolidada;
   const matriz = pacientes.map(function(l) {
     return [
       l[cols.NIS]           || '',  // Col 1: NIS
@@ -314,6 +402,7 @@ function etapaDistribuirPorRegiao() {
           try {
             _pipeline_moverParaRegiao(item.ssId, regiao, cfg.pastasRegionais);
             cp.lista[cp.indice].movida = true;
+            cp.lista[cp.indice].folderId = (cfg.pastasRegionais || {})[regiao] || '';
             cp.movidas++;
             logPadrao(MOD, '"' + item.nome + '" → ' + regiao);
           } catch (e) {

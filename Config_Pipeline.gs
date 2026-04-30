@@ -58,6 +58,21 @@ const CONFIG_PIPELINE = {
   // ── Pasta de origem (onde as novas planilhas serão criadas) ───────────────
   pastaOrigemId: '',  // ← ID da pasta raiz no Google Drive
 
+  // ── Pastas por unidade de saúde (opcional) ────────────────────────────────
+  // Se preenchido, a planilha de cada unidade será criada diretamente na
+  // pasta correspondente, ignorando pastaOrigemId para essa unidade.
+  // Chave: nome exato da unidade (igual ao que aparece no arquivo BFA).
+  // Valor: ID da pasta no Google Drive.
+  //
+  // Exemplo:
+  //   pastasUnidades: {
+  //     'UBS MODELO NORTE': '1AbC...folderId...',
+  //     'UBS CRISTAL':       '2DeF...folderId...'
+  //   }
+  //
+  // Unidades sem entrada aqui continuam usando pastaOrigemId → regional.
+  pastasUnidades: {},  // ← preencha se quiser pastas por unidade
+
   // ── Pastas regionais de destino ───────────────────────────────────────────
   // As planilhas criadas em pastaOrigemId serão movidas para a pasta
   // correspondente à região da unidade após o roteamento.
