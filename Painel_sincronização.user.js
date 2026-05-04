@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Painel Mestre Bolsa Família V9.2 (Condicionalidades configuráveis)
+// @name         Painel Mestre Bolsa Família V9.3 (Diagnóstico e persistência melhorados)
 // @namespace    http://violentmonkey.net/
-// @version      9.2.0
-// @description  Painel de gestão com condicionalidades configuráveis, validação automática e resumo de ciclo.
+// @version      9.3.0
+// @description  Painel de gestão com condicionalidades configuráveis, validação automática, resumo de ciclo e diagnóstico de erros aprimorado.
 // @author       Bernardo (Refinado por IA)
 // @match        file:///*/Acompanha+%20Familia.html
 // @match        https://esus.procempa.com.br/*
@@ -334,10 +334,16 @@
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
             toast.className = `text-white px-6 py-3 rounded-2xl shadow-2xl font-bold text-sm animate-fade`;
-            toast.style.cssText = 'background:linear-gradient(135deg,#6366f1,#818cf8);box-shadow:0 8px 32px rgba(99,102,241,0.4);';
+            const styles = {
+                success: 'background:linear-gradient(135deg,#059669,#34d399);box-shadow:0 8px 32px rgba(5,150,105,0.4);',
+                error:   'background:linear-gradient(135deg,#dc2626,#f87171);box-shadow:0 8px 32px rgba(220,38,38,0.4);',
+                warning: 'background:linear-gradient(135deg,#d97706,#fbbf24);box-shadow:0 8px 32px rgba(217,119,6,0.4);',
+                info:    'background:linear-gradient(135deg,#6366f1,#818cf8);box-shadow:0 8px 32px rgba(99,102,241,0.4);',
+            };
+            toast.style.cssText = styles[type] || styles.info;
             toast.innerText = msg;
             container.appendChild(toast);
-            setTimeout(() => toast.remove(), 4000);
+            setTimeout(() => toast.remove(), 5000);
         };
     }
 
@@ -350,6 +356,11 @@
                         <div id="dash-vig" style="font-size:12px;font-weight:700;color:#6366f1;margin-top:5px;letter-spacing:0.05em;">--</div>
                     </div>
                     <button id="btn-refresh" class="btn-glass" style="display:flex;align-items:center;gap:8px;padding:10px 18px;font-size:11px;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;border-radius:12px;"><span class="material-symbols-rounded" style="font-size:16px;">refresh</span> ATUALIZAR</button>
+                </div>
+
+                <div id="dash-stats-warn" style="display:none;margin-bottom:16px;padding:14px 18px;border-radius:12px;border:1px solid rgba(245,158,11,0.35);background:rgba(245,158,11,0.08);color:#fbbf24;font-size:11px;font-weight:700;letter-spacing:0.04em;">
+                    <span class="material-symbols-rounded" style="font-size:15px;vertical-align:middle;margin-right:6px;">warning</span>
+                    <span id="dash-stats-warn-msg"></span>
                 </div>
 
                 <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:20px;">
@@ -449,13 +460,10 @@
                             const elFilaEsus = document.getElementById('v-fila-esus');
                             const elDashPct = document.getElementById('dash-pct');
                             const elDashBar = document.getElementById('dash-bar');
-                            if (elV0) {
-                                elV0.innerText = totalBuscado;
-                                // Aviso quando as estatísticas dos robôs ainda não foram geradas
-                                elV0.title = (!res.dados.stats_disponivel && totalBuscado === 0)
-                                    ? "Estatísticas ainda não geradas pelos robôs, ou configurações foram resetadas."
-                                    : "";
-                            }
+                            const elWarn = document.getElementById('dash-stats-warn');
+                            const elWarnMsg = document.getElementById('dash-stats-warn-msg');
+
+                            if (elV0) elV0.innerText = totalBuscado;
                             if (elV1) elV1.innerText = cadastrosRealizados;
                             if (elVEgAtu) elVEgAtu.innerText = calculoJaCadastrados;
                             if (elV2) elV2.innerText = esusAtualizados;
@@ -470,6 +478,26 @@
                             const pct = total > 0 ? ((concluido / total) * 100).toFixed(1) : "0.0";
                             if (elDashPct) elDashPct.innerText = pct + '%';
                             if (elDashBar) elDashBar.style.width = pct + '%';
+
+                            // Avisos visíveis ao invés de apenas tooltip
+                            if (elWarn && elWarnMsg) {
+                                const msgs = [];
+                                if (!res.dados.stats_disponivel && totalBuscado === 0) {
+                                    msgs.push("Contadores dos robôs zerados — podem ter sido resetados. Os números voltarão a subir conforme os robôs processarem registros.");
+                                }
+                                if (!vigExibir) {
+                                    msgs.push("Vigência ativa não configurada. Acesse Configurações para definir a vigência e os links das pastas.");
+                                }
+                                if (res.dados.cache_error) {
+                                    msgs.push("Aviso: falha ao atualizar cache do banco de dados (" + res.dados.cache_error + ").");
+                                }
+                                if (msgs.length > 0) {
+                                    elWarnMsg.innerText = msgs.join(" • ");
+                                    elWarn.style.display = 'block';
+                                } else {
+                                    elWarn.style.display = 'none';
+                                }
+                            }
 
                             if (res.dados.historico && typeof Chart !== 'undefined') {
                                 const ctx = document.getElementById('dashboardChart').getContext('2d');
@@ -502,17 +530,35 @@
                             }
                         } else {
                             const elDashVig = document.getElementById('dash-vig');
-                            if (elDashVig) elDashVig.innerText = "Erro ao carregar dados do dashboard.";
+                            if (elDashVig) elDashVig.innerText = "Erro ao carregar dados: " + (res.err || "resposta inválida");
+                            const elWarn = document.getElementById('dash-stats-warn');
+                            const elWarnMsg = document.getElementById('dash-stats-warn-msg');
+                            if (elWarn && elWarnMsg) {
+                                elWarnMsg.innerText = "Erro na API: " + (res.err || "resposta inválida do servidor");
+                                elWarn.style.display = 'block';
+                            }
                             console.error("obter_dashboard error:", res);
                         }
                     } catch(e) {
+                        const elDashVig = document.getElementById('dash-vig');
+                        if (elDashVig) elDashVig.innerText = "Erro ao processar resposta do servidor.";
                         console.error("Erro ao processar resposta do dashboard:", e);
                     }
                     if(refresh) refresh.innerText = 'ATUALIZAR DADOS';
                 },
                 onerror: () => {
                     const elDashVig = document.getElementById('dash-vig');
-                    if (elDashVig) elDashVig.innerText = "Falha de rede ao carregar dashboard.";
+                    if (elDashVig) elDashVig.innerText = "Falha de rede — verifique a conexão.";
+                    ['v0','v1','v_eg_atu','v2','v-fila-egestor','v-fila-esus'].forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.innerText = '—';
+                    });
+                    const elWarn = document.getElementById('dash-stats-warn');
+                    const elWarnMsg = document.getElementById('dash-stats-warn-msg');
+                    if (elWarn && elWarnMsg) {
+                        elWarnMsg.innerText = "Falha de rede ao carregar o dashboard. Verifique sua conexão e tente novamente.";
+                        elWarn.style.display = 'block';
+                    }
                     if(refresh) refresh.innerText = 'ATUALIZAR DADOS';
                     console.error("Falha de rede ao chamar obter_dashboard.");
                 }
@@ -531,9 +577,13 @@
                     <p style="font-size:12px;color:#475569;margin-top:6px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Vigência Ativa e Links das Pastas</p>
                 </div>
                 <div class="glass-card" style="padding:28px;">
+                    <div id="cfg-status-bar" style="margin-bottom:16px;padding:10px 14px;border-radius:10px;border:1px solid rgba(99,102,241,0.2);background:rgba(99,102,241,0.06);color:#94a3b8;font-size:10px;font-weight:700;letter-spacing:0.06em;display:flex;align-items:center;gap:8px;">
+                        <span class="material-symbols-rounded" style="font-size:14px;animation:spin 1.5s linear infinite;" id="cfg-status-icon">sync</span>
+                        <span id="cfg-status-text">Carregando configuração do servidor...</span>
+                    </div>
                     <div style="margin-bottom:24px;">
                         <label style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.12em;display:block;margin-bottom:6px;">Vigência Ativa (Global)</label>
-                        <select id="c-nom" class="glass-input" style="cursor:pointer;">
+                        <select id="c-nom" class="glass-input" style="cursor:pointer;" disabled>
                             <option value="" disabled selected>Selecionar vigência...</option>
                             ${vigencias.map(v => `<option value="${v}" style="background:#0d1835">${v}</option>`).join('')}
                         </select>
@@ -542,19 +592,19 @@
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px;">
                         <div>
                             <label style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.12em;display:flex;align-items:center;gap:6px;margin-bottom:6px;"><span style="width:8px;height:8px;background:#818cf8;border-radius:2px;display:inline-block;flex-shrink:0;"></span> Pasta Norte</label>
-                            <input id="c-nor" class="glass-input" placeholder="Cole o link aqui">
+                            <input id="c-nor" class="glass-input" placeholder="Cole o link aqui" disabled>
                         </div>
                         <div>
                             <label style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.12em;display:flex;align-items:center;gap:6px;margin-bottom:6px;"><span style="width:8px;height:8px;background:#10b981;border-radius:2px;display:inline-block;flex-shrink:0;"></span> Pasta Sul</label>
-                            <input id="c-sul" class="glass-input" placeholder="Cole o link aqui">
+                            <input id="c-sul" class="glass-input" placeholder="Cole o link aqui" disabled>
                         </div>
                         <div>
                             <label style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.12em;display:flex;align-items:center;gap:6px;margin-bottom:6px;"><span style="width:8px;height:8px;background:#f59e0b;border-radius:2px;display:inline-block;flex-shrink:0;"></span> Pasta Leste</label>
-                            <input id="c-les" class="glass-input" placeholder="Cole o link aqui">
+                            <input id="c-les" class="glass-input" placeholder="Cole o link aqui" disabled>
                         </div>
                         <div>
                             <label style="font-size:9px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.12em;display:flex;align-items:center;gap:6px;margin-bottom:6px;"><span style="width:8px;height:8px;background:#ef4444;border-radius:2px;display:inline-block;flex-shrink:0;"></span> Pasta Oeste</label>
-                            <input id="c-oes" class="glass-input" placeholder="Cole o link aqui">
+                            <input id="c-oes" class="glass-input" placeholder="Cole o link aqui" disabled>
                         </div>
                     </div>
                     <button id="btn-save-cfg" style="width:100%;background:linear-gradient(135deg,#6366f1,#818cf8);border:none;color:white;font-weight:800;padding:16px 24px;border-radius:14px;cursor:pointer;font-size:11px;letter-spacing:0.15em;text-transform:uppercase;transition:all 0.2s;box-shadow:0 4px 24px rgba(99,102,241,0.3);">SALVAR PARA TODA A EQUIPE</button>
@@ -575,6 +625,30 @@
 
         const dropdown = document.getElementById('c-nom');
         const inputs = [document.getElementById('c-nor'), document.getElementById('c-sul'), document.getElementById('c-les'), document.getElementById('c-oes')];
+        const statusBar = document.getElementById('cfg-status-bar');
+        const statusIcon = document.getElementById('cfg-status-icon');
+        const statusText = document.getElementById('cfg-status-text');
+
+        function setStatus(type, msg) {
+            const map = {
+                loading: { icon: 'sync', color: '#94a3b8', bg: 'rgba(99,102,241,0.06)', bd: 'rgba(99,102,241,0.2)', spin: true },
+                ok:      { icon: 'check_circle', color: '#34d399', bg: 'rgba(16,185,129,0.06)', bd: 'rgba(16,185,129,0.25)', spin: false },
+                warn:    { icon: 'info', color: '#fbbf24', bg: 'rgba(245,158,11,0.08)', bd: 'rgba(245,158,11,0.3)', spin: false },
+                error:   { icon: 'error', color: '#f87171', bg: 'rgba(239,68,68,0.08)', bd: 'rgba(239,68,68,0.3)', spin: false },
+            };
+            const s = map[type] || map.loading;
+            statusBar.style.background = s.bg;
+            statusBar.style.border = `1px solid ${s.bd}`;
+            statusBar.style.color = s.color;
+            statusIcon.textContent = s.icon;
+            statusIcon.style.animation = s.spin ? 'spin 1.5s linear infinite' : 'none';
+            statusText.textContent = msg;
+        }
+
+        function enableForm() {
+            dropdown.disabled = false;
+            inputs.forEach(i => i.disabled = false);
+        }
 
         dropdown.addEventListener('change', () => {
             const vigAtual = normalizeVigencia(CONFIG_ATUAL_SERVIDOR?.vigencia || "");
@@ -611,10 +685,26 @@
                         inputs[1].value = j.data.SUL ? `https://drive.google.com/drive/folders/${j.data.SUL}` : "";
                         inputs[2].value = j.data.LESTE ? `https://drive.google.com/drive/folders/${j.data.LESTE}` : "";
                         inputs[3].value = j.data.OESTE ? `https://drive.google.com/drive/folders/${j.data.OESTE}` : "";
+                        setStatus('ok', `Carregado da API • Vigência ativa: ${vigNorm || VIG_NAO_CONFIGURADA}`);
+                    } else if (j.ok && !j.data) {
+                        setStatus('warn', 'Nenhuma configuração salva no servidor. Selecione uma vigência e adicione os links das pastas.');
+                    } else {
+                        setStatus('error', 'Erro ao ler configuração: ' + (j.err || 'resposta inválida do servidor'));
+                        window.showToast('Erro ao carregar configuração do servidor: ' + (j.err || 'resposta inválida'), 'error');
                     }
-                } catch(e) { console.error("Erro ao carregar configuração:", e); }
+                } catch(e) {
+                    setStatus('error', 'Erro ao processar resposta do servidor.');
+                    window.showToast('Erro ao processar resposta do servidor ao carregar configuração.', 'error');
+                    console.error("Erro ao carregar configuração:", e);
+                }
+                enableForm();
             },
-            onerror: () => { console.error("Falha de rede ao carregar configuração."); }
+            onerror: () => {
+                setStatus('error', 'Falha de rede — não foi possível carregar a configuração do servidor.');
+                window.showToast('Falha de rede ao carregar configuração. Verifique sua conexão.', 'error');
+                enableForm();
+                console.error("Falha de rede ao carregar configuração.");
+            }
         });
 
         document.getElementById('btn-save-cfg').onclick = function() {
@@ -624,6 +714,7 @@
                 return;
             }
             this.innerText = "SALVANDO...";
+            this.disabled = true;
             const btn = this;
             const idN = extractId(inputs[0].value), idS = extractId(inputs[1].value), idL = extractId(inputs[2].value), idO = extractId(inputs[3].value);
             const d = `action=save_config&api_target=panel&token=${TOKEN_ACESSO}&vigencia_nome=${encodeURIComponent(vigSelecionada)}&folder_norte=${encodeURIComponent(idN)}&folder_sul=${encodeURIComponent(idS)}&folder_leste=${encodeURIComponent(idL)}&folder_oeste=${encodeURIComponent(idO)}`;
@@ -633,21 +724,57 @@
                     try {
                         const r = JSON.parse(resp.responseText);
                         if (r.ok) {
-                            window.showToast("Configuração salva para toda a equipe!");
                             CONFIG_ATUAL_SERVIDOR = { vigencia: vigSelecionada, NORTE: idN, SUL: idS, LESTE: idL, OESTE: idO };
+                            // Verificar se o dado foi realmente persistido
+                            btn.innerText = "VERIFICANDO...";
+                            setStatus('loading', 'Verificando persistência no servidor...');
+                            GM_xmlhttpRequest({
+                                method: "POST", url: URL_APPS_SCRIPT, headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                                data: `action=get_config&api_target=panel&token=${TOKEN_ACESSO}`,
+                                onload: (vRes) => {
+                                    try {
+                                        const vj = JSON.parse(vRes.responseText);
+                                        const savedVig = normalizeVigencia(vj.data?.vigencia || "");
+                                        if (vj.ok && vj.data && savedVig === vigSelecionada) {
+                                            setStatus('ok', `Salvo e verificado ✓ • Vigência ativa: ${savedVig}`);
+                                            window.showToast(r.msg || "Configuração salva para toda a equipe!", "success");
+                                        } else {
+                                            setStatus('error', 'Salvo, mas a verificação retornou dados diferentes. Tente salvar novamente.');
+                                            window.showToast('Atenção: o servidor confirmou o salvamento, mas a verificação retornou dados diferentes.', 'warning');
+                                        }
+                                    } catch(e) {
+                                        setStatus('ok', `Salvo ✓ • Vigência: ${vigSelecionada} (verificação falhou, mas save confirmado)`);
+                                        window.showToast(r.msg || "Configuração salva para toda a equipe!", "success");
+                                    }
+                                    btn.innerText = "SALVAR PARA TODA A EQUIPE";
+                                    btn.disabled = false;
+                                },
+                                onerror: () => {
+                                    setStatus('ok', `Salvo ✓ • Vigência: ${vigSelecionada} (verificação offline)`);
+                                    window.showToast(r.msg || "Configuração salva para toda a equipe!", "success");
+                                    btn.innerText = "SALVAR PARA TODA A EQUIPE";
+                                    btn.disabled = false;
+                                }
+                            });
+                            return; // não restaurar o botão ainda
                         } else {
-                            window.showToast("Erro ao salvar configuração. Verifique os dados e tente novamente.", "error");
+                            window.showToast("Erro ao salvar configuração: " + (r.err || "verifique os dados e tente novamente"), "error");
+                            setStatus('error', 'Erro ao salvar: ' + (r.err || 'resposta inválida do servidor'));
                             console.error("save_config error:", r);
                         }
                     } catch(e) {
                         window.showToast("Erro ao salvar configuração. Tente novamente.", "error");
+                        setStatus('error', 'Erro ao processar resposta do servidor ao salvar.');
                         console.error("save_config parse error:", e);
                     }
                     btn.innerText = "SALVAR PARA TODA A EQUIPE";
+                    btn.disabled = false;
                 },
                 onerror: () => {
                     window.showToast("Falha de rede ao salvar. Tente novamente.", "error");
+                    setStatus('error', 'Falha de rede ao tentar salvar a configuração.');
                     btn.innerText = "SALVAR PARA TODA A EQUIPE";
+                    btn.disabled = false;
                 }
             });
         };

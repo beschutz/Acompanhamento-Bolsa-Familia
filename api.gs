@@ -1,5 +1,5 @@
 /**
- * 🤖 API CENTRALIZADA V9.0 (Integração Robôs e Painel Web - Vigência 1/2026)
+ * 🤖 API CENTRALIZADA V9.1 (Integração Robôs e Painel Web)
  * Responsável por:
  * 1. Receber chamadas do Painel Web (Sincronizar, Distribuir, Devolver)
  * 2. Fornecer dados para os Robôs Tampermonkey (E-gestor e E-SUS)
@@ -63,8 +63,15 @@ function apiPanel(params) {
     
     // DASHBOARD: Se forçado ou se estiver zerado, recalcula as métricas
     if (action === "obter_dashboard") {
-      if (params.force === "true" || !props.getProperty('CACHE_TOTAL_DB')) atualizarCacheStats();
-      return jsonOut({ ok: true, dados: getDashboardStats() });
+      let cacheErr = null;
+      try {
+        if (params.force === "true" || !props.getProperty('CACHE_TOTAL_DB')) atualizarCacheStats();
+      } catch(e) {
+        cacheErr = e.message;
+      }
+      const stats = getDashboardStats();
+      if (cacheErr) stats.cache_error = cacheErr;
+      return jsonOut({ ok: true, dados: stats });
     }
     
     if (action === "save_config") {
