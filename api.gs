@@ -69,7 +69,7 @@ function apiPanel(params) {
     
     if (action === "save_config") {
       const config = { 
-        vigencia: params.vigencia_nome, 
+        vigencia: normalizeVigencia_(params.vigencia_nome), 
         NORTE: extractId(params.folder_norte), 
         SUL: extractId(params.folder_sul), 
         LESTE: extractId(params.folder_leste), 
@@ -80,7 +80,11 @@ function apiPanel(params) {
     }
     
     if (action === "get_config") {
-      return jsonOut({ ok: true, data: JSON.parse(props.getProperty('VIGENCIA_CONFIG') || "null") });
+      const raw = props.getProperty('VIGENCIA_CONFIG');
+      if (!raw) return jsonOut({ ok: true, data: null });
+      const cfg = JSON.parse(raw);
+      if (cfg && cfg.vigencia) cfg.vigencia = normalizeVigencia_(cfg.vigencia);
+      return jsonOut({ ok: true, data: cfg });
     }
 
     if (action === "health_check") {
@@ -205,6 +209,19 @@ function extractId(url) {
   return m ? m[0] : url.trim(); 
 }
 
+/**
+ * Normaliza o formato da vigência para AAAA/S (ex.: "1/2026" → "2026/1").
+ * Caso o valor já esteja no formato correto ou seja inválido, retorna como está.
+ */
+function normalizeVigencia_(v) {
+  if (!v) return v;
+  const s = String(v).trim();
+  // Formato invertido S/AAAA → AAAA/S
+  const inv = s.match(/^([12])\/(\d{4})$/);
+  if (inv) return `${inv[2]}/${inv[1]}`;
+  return s;
+}
+
 // =================================================================================
 // 2. ESTATÍSTICAS E CACHE
 // =================================================================================
@@ -214,18 +231,27 @@ function getDashboardStats() {
   const ssFila = SpreadsheetApp.openById(ID_FILA_ROBOS_API);
   const shEg = ssFila.getSheetByName(SHEET_EGESTOR);
   const shEs = ssFila.getSheetByName(SHEET_ESUS);
-  
+
+  const totalBuscado = parseInt(props.getProperty('STATS_TOTAL_BUSCADO') || "0");
+  const statsDisponivel = props.getProperty('STATS_TOTAL_BUSCADO') !== null;
+
+  const cfgRaw = props.getProperty('VIGENCIA_CONFIG');
+  let cfg = {};
+  try { cfg = JSON.parse(cfgRaw || "{}"); } catch(e) {}
+  if (cfg.vigencia) cfg.vigencia = normalizeVigencia_(cfg.vigencia);
+
   return {
     fila_egestor: shEg ? Math.max(0, shEg.getLastRow() - 1) : 0,
     fila_esus: shEs ? Math.max(0, shEs.getLastRow() - 1) : 0,
-    total_buscado: parseInt(props.getProperty('STATS_TOTAL_BUSCADO') || "0"),
+    total_buscado: totalBuscado,
     cadastros_realizados: parseInt(props.getProperty('STATS_CADASTROS_REALIZADOS') || props.getProperty('STATS_CADASTROS') || "0"),
-    egestor_atualizados: parseInt(props.getProperty('STATS_EGESTOR_ATUALIZADOS') || "0"), // NOVO MEDIDOR
+    egestor_atualizados: parseInt(props.getProperty('STATS_EGESTOR_ATUALIZADOS') || "0"),
     atualizacoes: parseInt(props.getProperty('STATS_ATUALIZACOES') || "0"),
     total_db: parseInt(props.getProperty('CACHE_TOTAL_DB') || "1"),
     concluidos_db: parseInt(props.getProperty('CACHE_CONCLUIDOS_DB') || "0"),
     historico: JSON.parse(props.getProperty('STATS_HISTORICO') || "{}"),
-    config: JSON.parse(props.getProperty('VIGENCIA_CONFIG') || "{}")
+    config: cfg,
+    stats_disponivel: statsDisponivel
   };
 }
 

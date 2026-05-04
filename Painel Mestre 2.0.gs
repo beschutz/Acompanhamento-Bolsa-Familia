@@ -595,7 +595,8 @@ function recalcularPrioridadeMestre(row, condCfg) {
 function getVigenciaAtiva_() {
   try {
     const cfg = JSON.parse(PropertiesService.getScriptProperties().getProperty('VIGENCIA_CONFIG') || "{}");
-    return String(cfg.vigencia || "").trim();
+    const v = String(cfg.vigencia || "").trim();
+    return normalizeVigencia_(v);
   } catch (e) {
     return "";
   }

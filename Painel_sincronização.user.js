@@ -44,6 +44,7 @@
     const VIGENCIAS_DEFAULT = ["2026/1", "2026/2", "2027/1", "2027/2", "2028/1", "2028/2"];
     const VIGENCIAS_STORAGE_KEY = 'vigencias_list';
     const VIGENCIA_FORMAT = /^\d{4}\/[12]$/;
+    const VIG_NAO_CONFIGURADA = "NÃO CONFIGURADA";
 
     function getVigenciasList() {
         try {
@@ -58,6 +59,18 @@
 
     function saveVigenciasList(list) {
         GM_setValue(VIGENCIAS_STORAGE_KEY, JSON.stringify(list));
+    }
+
+    /**
+     * Normaliza o formato de vigência para AAAA/S (ex.: "1/2026" → "2026/1").
+     * Se já estiver no formato correto ou for inválido, retorna como está.
+     */
+    function normalizeVigencia(v) {
+        if (!v) return v;
+        const s = String(v).trim();
+        const inv = s.match(/^([12])\/(\d{4})$/);
+        if (inv) return `${inv[2]}/${inv[1]}`;
+        return s;
     }
 
     // =================================================================
@@ -418,88 +431,90 @@
                 method: "POST", url: URL_APPS_SCRIPT, headers: { "Content-Type": "application/x-www-form-urlencoded" },
                 data: `action=obter_dashboard&api_target=panel&token=${TOKEN_ACESSO}&force=${force}`,
                 onload: (response) => {
-                    const res = JSON.parse(response.responseText);
-                    if(res.ok) {
-                        // Faz a matemática reversa para calcular os já cadastrados antigos também
-                        const totalBuscado = parseInt(res.dados.total_buscado) || 0;
-                        const cadastrosRealizados = parseInt(res.dados.cadastros_realizados) || 0;
-                        const esusAtualizados = parseInt(res.dados.atualizacoes) || 0;
+                    try {
+                        const res = JSON.parse(response.responseText);
+                        if(res.ok) {
+                            const totalBuscado = parseInt(res.dados.total_buscado) || 0;
+                            const cadastrosRealizados = parseInt(res.dados.cadastros_realizados) || 0;
+                            const esusAtualizados = parseInt(res.dados.atualizacoes) || 0;
 
-                        // Calculamos subtraindo os novos e o esus do total buscado (só não deixa ficar negativo)
-                        const calculoJaCadastrados = Math.max(0, totalBuscado - cadastrosRealizados - esusAtualizados);
+                            const calculoJaCadastrados = Math.max(0, totalBuscado - cadastrosRealizados - esusAtualizados);
 
-                        const elV0 = document.getElementById('v0');
-                        const elV1 = document.getElementById('v1');
-                        const elVEgAtu = document.getElementById('v_eg_atu');
-                        const elV2 = document.getElementById('v2');
-                        const elDashVig = document.getElementById('dash-vig');
-                        const elFilaEgestor = document.getElementById('v-fila-egestor');
-                        const elFilaEsus = document.getElementById('v-fila-esus');
-                        const elDashPct = document.getElementById('dash-pct');
-                        const elDashBar = document.getElementById('dash-bar');
-                        if (elV0) elV0.innerText = totalBuscado;
-                        if (elV1) elV1.innerText = cadastrosRealizados;
-                        if (elVEgAtu) elVEgAtu.innerText = calculoJaCadastrados;
-                        if (elV2) elV2.innerText = esusAtualizados;
-                        if (elDashVig) elDashVig.innerText = res.dados.config?.vigencia || "";
-                        if (elFilaEgestor) elFilaEgestor.innerText = res.dados.fila_egestor || 0;
-                        if (elFilaEsus) elFilaEsus.innerText = res.dados.fila_esus || 0;
+                            const elV0 = document.getElementById('v0');
+                            const elV1 = document.getElementById('v1');
+                            const elVEgAtu = document.getElementById('v_eg_atu');
+                            const elV2 = document.getElementById('v2');
+                            const elDashVig = document.getElementById('dash-vig');
+                            const elFilaEgestor = document.getElementById('v-fila-egestor');
+                            const elFilaEsus = document.getElementById('v-fila-esus');
+                            const elDashPct = document.getElementById('dash-pct');
+                            const elDashBar = document.getElementById('dash-bar');
+                            if (elV0) {
+                                elV0.innerText = totalBuscado;
+                                // Aviso quando as estatísticas dos robôs ainda não foram geradas
+                                elV0.title = (!res.dados.stats_disponivel && totalBuscado === 0)
+                                    ? "Estatísticas ainda não geradas pelos robôs, ou configurações foram resetadas."
+                                    : "";
+                            }
+                            if (elV1) elV1.innerText = cadastrosRealizados;
+                            if (elVEgAtu) elVEgAtu.innerText = calculoJaCadastrados;
+                            if (elV2) elV2.innerText = esusAtualizados;
+                            const vigExibir = normalizeVigencia(res.dados.config?.vigencia || "");
+                            if (elDashVig) elDashVig.innerText = vigExibir || VIG_NAO_CONFIGURADA;
 
-                        const total = parseFloat(res.dados.total_db) || 0;
-                        const concluido = parseFloat(res.dados.concluidos_db) || 0;
-                        const pct = total > 0 ? ((concluido / total) * 100).toFixed(1) : "0.0";
-                        if (elDashPct) elDashPct.innerText = pct + '%';
-                        if (elDashBar) elDashBar.style.width = pct + '%';
+                            if (elFilaEgestor) elFilaEgestor.innerText = res.dados.fila_egestor || 0;
+                            if (elFilaEsus) elFilaEsus.innerText = res.dados.fila_esus || 0;
 
-                        if (res.dados.historico && typeof Chart !== 'undefined') {
-                            const ctx = document.getElementById('dashboardChart').getContext('2d');
-                            if (chartInstance) chartInstance.destroy();
-                            const labels = Object.keys(res.dados.historico).sort();
+                            const total = parseFloat(res.dados.total_db) || 0;
+                            const concluido = parseFloat(res.dados.concluidos_db) || 0;
+                            const pct = total > 0 ? ((concluido / total) * 100).toFixed(1) : "0.0";
+                            if (elDashPct) elDashPct.innerText = pct + '%';
+                            if (elDashBar) elDashBar.style.width = pct + '%';
 
-                            // SEPARAÇÃO DOS DADOS PARA O GRÁFICO EMPILHADO
-                            const dataEgestorNovos = labels.map(l => res.dados.historico[l].egestor || 0);
-                            const dataEgestorAtu = labels.map(l => res.dados.historico[l].egestor_atualizados || 0);
-                            const dataEsus = labels.map(l => res.dados.historico[l].esus || 0);
+                            if (res.dados.historico && typeof Chart !== 'undefined') {
+                                const ctx = document.getElementById('dashboardChart').getContext('2d');
+                                if (chartInstance) chartInstance.destroy();
+                                const labels = Object.keys(res.dados.historico).sort();
 
-                            chartInstance = new Chart(ctx, {
-                                type: 'bar',
-                                data: {
-                                    labels,
-                                    datasets: [
-                                        {
-                                            label: 'e-Gestor (Novos)',
-                                            data: dataEgestorNovos,
-                                            backgroundColor: '#10b981', // Verde Claro
-                                            stack: 'Stack 0'
-                                        },
-                                        {
-                                            label: 'e-Gestor (Já Cadastrados)',
-                                            data: dataEgestorAtu,
-                                            backgroundColor: '#047857', // Verde Escuro
-                                            stack: 'Stack 0',
-                                            borderRadius: 4
-                                        },
-                                        {
-                                            label: 'e-SUS',
-                                            data: dataEsus,
-                                            backgroundColor: '#3b82f6',
-                                            stack: 'Stack 1',
-                                            borderRadius: 4
+                                const dataEgestorNovos = labels.map(l => res.dados.historico[l].egestor || 0);
+                                const dataEgestorAtu = labels.map(l => res.dados.historico[l].egestor_atualizados || 0);
+                                const dataEsus = labels.map(l => res.dados.historico[l].esus || 0);
+
+                                chartInstance = new Chart(ctx, {
+                                    type: 'bar',
+                                    data: {
+                                        labels,
+                                        datasets: [
+                                            { label: 'e-Gestor (Novos)', data: dataEgestorNovos, backgroundColor: '#10b981', stack: 'Stack 0' },
+                                            { label: 'e-Gestor (Já Cadastrados)', data: dataEgestorAtu, backgroundColor: '#047857', stack: 'Stack 0', borderRadius: 4 },
+                                            { label: 'e-SUS', data: dataEsus, backgroundColor: '#3b82f6', stack: 'Stack 1', borderRadius: 4 }
+                                        ]
+                                    },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        scales: {
+                                            x: { stacked: true },
+                                            y: { stacked: true, beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } }
                                         }
-                                    ]
-                                },
-                                options: {
-                                    responsive: true,
-                                    maintainAspectRatio: false,
-                                    scales: {
-                                        x: { stacked: true },
-                                        y: { stacked: true, beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } }
                                     }
-                                }
-                            });
+                                });
+                            }
+                        } else {
+                            const elDashVig = document.getElementById('dash-vig');
+                            if (elDashVig) elDashVig.innerText = "Erro ao carregar dados do dashboard.";
+                            console.error("obter_dashboard error:", res);
                         }
+                    } catch(e) {
+                        console.error("Erro ao processar resposta do dashboard:", e);
                     }
                     if(refresh) refresh.innerText = 'ATUALIZAR DADOS';
+                },
+                onerror: () => {
+                    const elDashVig = document.getElementById('dash-vig');
+                    if (elDashVig) elDashVig.innerText = "Falha de rede ao carregar dashboard.";
+                    if(refresh) refresh.innerText = 'ATUALIZAR DADOS';
+                    console.error("Falha de rede ao chamar obter_dashboard.");
                 }
             });
         }
@@ -562,10 +577,11 @@
         const inputs = [document.getElementById('c-nor'), document.getElementById('c-sul'), document.getElementById('c-les'), document.getElementById('c-oes')];
 
         dropdown.addEventListener('change', () => {
-            if (CONFIG_ATUAL_SERVIDOR && dropdown.value !== CONFIG_ATUAL_SERVIDOR.vigencia) {
+            const vigAtual = normalizeVigencia(CONFIG_ATUAL_SERVIDOR?.vigencia || "");
+            if (CONFIG_ATUAL_SERVIDOR && normalizeVigencia(dropdown.value) !== vigAtual) {
                 inputs.forEach(i => i.value = "");
                 window.showToast("Introduza novos links para esta vigência", "info");
-            } else if (CONFIG_ATUAL_SERVIDOR && dropdown.value === CONFIG_ATUAL_SERVIDOR.vigencia) {
+            } else if (CONFIG_ATUAL_SERVIDOR && normalizeVigencia(dropdown.value) === vigAtual) {
                 inputs[0].value = CONFIG_ATUAL_SERVIDOR.NORTE ? `https://drive.google.com/drive/folders/${CONFIG_ATUAL_SERVIDOR.NORTE}` : "";
                 inputs[1].value = CONFIG_ATUAL_SERVIDOR.SUL ? `https://drive.google.com/drive/folders/${CONFIG_ATUAL_SERVIDOR.SUL}` : "";
                 inputs[2].value = CONFIG_ATUAL_SERVIDOR.LESTE ? `https://drive.google.com/drive/folders/${CONFIG_ATUAL_SERVIDOR.LESTE}` : "";
@@ -577,23 +593,63 @@
             method: "POST", url: URL_APPS_SCRIPT, headers: { "Content-Type": "application/x-www-form-urlencoded" },
             data: `action=get_config&api_target=panel&token=${TOKEN_ACESSO}`,
             onload: (res) => {
-                const j = JSON.parse(res.responseText);
-                if(j.ok && j.data) {
-                    CONFIG_ATUAL_SERVIDOR = j.data;
-                    dropdown.value = j.data.vigencia || "";
-                    inputs[0].value = j.data.NORTE ? `https://drive.google.com/drive/folders/${j.data.NORTE}` : "";
-                    inputs[1].value = j.data.SUL ? `https://drive.google.com/drive/folders/${j.data.SUL}` : "";
-                    inputs[2].value = j.data.LESTE ? `https://drive.google.com/drive/folders/${j.data.LESTE}` : "";
-                    inputs[3].value = j.data.OESTE ? `https://drive.google.com/drive/folders/${j.data.OESTE}` : "";
-                }
-            }
+                try {
+                    const j = JSON.parse(res.responseText);
+                    if(j.ok && j.data) {
+                        const vigNorm = normalizeVigencia(j.data.vigencia || "");
+                        // Garante que a vigência normalizada existe no dropdown
+                        if (vigNorm && !Array.from(dropdown.options).some(o => o.value === vigNorm)) {
+                            const opt = document.createElement('option');
+                            opt.value = vigNorm;
+                            opt.textContent = vigNorm;
+                            opt.style.background = '#0d1835';
+                            dropdown.appendChild(opt);
+                        }
+                        CONFIG_ATUAL_SERVIDOR = Object.assign({}, j.data, { vigencia: vigNorm });
+                        dropdown.value = vigNorm;
+                        inputs[0].value = j.data.NORTE ? `https://drive.google.com/drive/folders/${j.data.NORTE}` : "";
+                        inputs[1].value = j.data.SUL ? `https://drive.google.com/drive/folders/${j.data.SUL}` : "";
+                        inputs[2].value = j.data.LESTE ? `https://drive.google.com/drive/folders/${j.data.LESTE}` : "";
+                        inputs[3].value = j.data.OESTE ? `https://drive.google.com/drive/folders/${j.data.OESTE}` : "";
+                    }
+                } catch(e) { console.error("Erro ao carregar configuração:", e); }
+            },
+            onerror: () => { console.error("Falha de rede ao carregar configuração."); }
         });
 
         document.getElementById('btn-save-cfg').onclick = function() {
-            this.innerText = "LIMPANDO LINKS E SALVANDO...";
+            const vigSelecionada = normalizeVigencia(dropdown.value);
+            if (!vigSelecionada) {
+                window.showToast("Selecione uma vigência antes de salvar!", "error");
+                return;
+            }
+            this.innerText = "SALVANDO...";
+            const btn = this;
             const idN = extractId(inputs[0].value), idS = extractId(inputs[1].value), idL = extractId(inputs[2].value), idO = extractId(inputs[3].value);
-            const d = `action=save_config&api_target=panel&token=${TOKEN_ACESSO}&vigencia_nome=${dropdown.value}&folder_norte=${idN}&folder_sul=${idS}&folder_leste=${idL}&folder_oeste=${idO}`;
-            GM_xmlhttpRequest({ method: "POST", url: URL_APPS_SCRIPT, headers: { "Content-Type": "application/x-www-form-urlencoded" }, data: d, onload: () => { window.showToast("Configuração Salva!"); this.innerText = "SALVAR PARA TODA A EQUIPE"; CONFIG_ATUAL_SERVIDOR = { vigencia: dropdown.value, NORTE: idN, SUL: idS, LESTE: idL, OESTE: idO }; } });
+            const d = `action=save_config&api_target=panel&token=${TOKEN_ACESSO}&vigencia_nome=${encodeURIComponent(vigSelecionada)}&folder_norte=${encodeURIComponent(idN)}&folder_sul=${encodeURIComponent(idS)}&folder_leste=${encodeURIComponent(idL)}&folder_oeste=${encodeURIComponent(idO)}`;
+            GM_xmlhttpRequest({
+                method: "POST", url: URL_APPS_SCRIPT, headers: { "Content-Type": "application/x-www-form-urlencoded" }, data: d,
+                onload: (resp) => {
+                    try {
+                        const r = JSON.parse(resp.responseText);
+                        if (r.ok) {
+                            window.showToast("Configuração salva para toda a equipe!");
+                            CONFIG_ATUAL_SERVIDOR = { vigencia: vigSelecionada, NORTE: idN, SUL: idS, LESTE: idL, OESTE: idO };
+                        } else {
+                            window.showToast("Erro ao salvar configuração. Verifique os dados e tente novamente.", "error");
+                            console.error("save_config error:", r);
+                        }
+                    } catch(e) {
+                        window.showToast("Erro ao salvar configuração. Tente novamente.", "error");
+                        console.error("save_config parse error:", e);
+                    }
+                    btn.innerText = "SALVAR PARA TODA A EQUIPE";
+                },
+                onerror: () => {
+                    window.showToast("Falha de rede ao salvar. Tente novamente.", "error");
+                    btn.innerText = "SALVAR PARA TODA A EQUIPE";
+                }
+            });
         };
 
         // ── Gerenciar Vigências ───────────────────────────────────────
@@ -1281,7 +1337,7 @@ async function fetchDashboardSnapshot() {
 
   return {
     ts: Date.now(),
-    vigencia: res.dados.config?.vigencia || "",
+    vigencia: normalizeVigencia(res.dados.config?.vigencia || ""),
     fila_egestor: safeNum(res.dados.fila_egestor),
     fila_esus: safeNum(res.dados.fila_esus),
     total_buscado: safeNum(res.dados.total_buscado),
@@ -1450,7 +1506,7 @@ function renderCycleSummary(before, after, msTotal) {
       const cfg = (resCfg && resCfg.ok) ? (resCfg.data || null) : null;
 
       const vigEl = document.getElementById('vigencia-nome');
-      const vigName = cfg?.vigencia ? cfg.vigencia : "NÃO CONFIGURADA";
+      const vigName = cfg?.vigencia ? normalizeVigencia(cfg.vigencia) : VIG_NAO_CONFIGURADA;
       if(vigEl) vigEl.textContent = vigName;
       renderZonaChips(cfg || {});
 
