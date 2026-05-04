@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Painel Mestre Bolsa Família V9.2 (Condicionalidades configuráveis)
+// @name         Painel Mestre Bolsa Família V9.3 (Condicionalidades configuráveis)
 // @namespace    http://violentmonkey.net/
-// @version      9.2.0
+// @version      9.3.0
 // @description  Painel de gestão com condicionalidades configuráveis, validação automática e resumo de ciclo.
 // @author       Bernardo (Refinado por IA)
 // @match        file:///*/Acompanha+%20Familia.html
@@ -33,6 +33,9 @@
     const URL_LOGO = "https://i.imgur.com/DVARunG.png";
     const LINK_EGESTOR = "https://acesso-egestoraps.saude.gov.br/login";
     const LINK_ESUS = "https://esus.procempa.com.br/";
+
+    // Versão esperada do backend — deve coincidir com APP_VERSION em api.gs
+    const FRONTEND_VERSION = "9.3";
 
     let MEMORY_CREDS = null;
     let chartInstance = null;
@@ -263,7 +266,7 @@
                             </div>
                             <div>
                                 <div style="font-size:16px;font-weight:900;color:white;letter-spacing:-0.5px;font-style:italic;line-height:1.2;">ACOMPANHA<span style="color:#818cf8;">+</span></div>
-                                <div style="font-size:9px;font-weight:700;color:#1e293b;letter-spacing:0.12em;text-transform:uppercase;margin-top:2px;">Hub Painel v9.0</div>
+                                <div style="font-size:9px;font-weight:700;color:#1e293b;letter-spacing:0.12em;text-transform:uppercase;margin-top:2px;">Hub Painel v${FRONTEND_VERSION}</div>
                             </div>
                         </div>
                     </div>
@@ -281,10 +284,11 @@
                         <div id="nav-esus" class="nav-item"><span class="material-symbols-rounded" style="font-size:18px;">medical_services</span> e-SUS Login</div>
                     </nav>
                     <div style="padding:14px 18px;border-top:1px solid rgba(255,255,255,0.04);">
-                        <div style="display:flex;align-items:center;gap:8px;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
                             <div style="width:7px;height:7px;background:#10b981;border-radius:50%;flex-shrink:0;"></div>
                             <span style="font-size:10px;font-weight:700;color:#1e293b;">Sistema Operacional</span>
                         </div>
+                        <div id="sidebar-version" style="font-size:9px;font-weight:700;color:#334155;letter-spacing:0.06em;cursor:default;" title="Verificando versão do backend...">Backend: verificando...</div>
                     </div>
                 </aside>
                 <main style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:radial-gradient(ellipse at 80% 0%,rgba(99,102,241,0.07) 0%,transparent 55%),radial-gradient(ellipse at 0% 90%,rgba(16,185,129,0.05) 0%,transparent 45%),#060b18;">
@@ -339,6 +343,42 @@
             container.appendChild(toast);
             setTimeout(() => toast.remove(), 4000);
         };
+
+        // Verifica versão do backend para alertar sobre deploy desatualizado
+        GM_xmlhttpRequest({
+            method: "POST", url: URL_APPS_SCRIPT,
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            data: `action=get_version&api_target=panel&token=${TOKEN_ACESSO}`,
+            onload: (res) => {
+                try {
+                    const j = JSON.parse(res.responseText);
+                    const el = document.getElementById('sidebar-version');
+                    if (!el) return;
+                    if (j.ok && j.data) {
+                        const backVer = String(j.data.version || "?");
+                        if (backVer !== FRONTEND_VERSION) {
+                            el.textContent = `Backend v${backVer} ⚠️ (esperado v${FRONTEND_VERSION})`;
+                            el.style.color = '#fbbf24';
+                            el.title = `Deploy desatualizado! Backend está na v${backVer} mas o painel espera v${FRONTEND_VERSION}. Publique uma nova versão do Apps Script.`;
+                            window.showToast(`⚠️ Deploy desatualizado: backend v${backVer} ≠ painel v${FRONTEND_VERSION}. Redeploy necessário.`, 'error');
+                        } else {
+                            el.textContent = `Backend v${backVer} ✓`;
+                            el.style.color = '#10b981';
+                            el.title = `Backend e painel estão na mesma versão (${backVer}).`;
+                        }
+                    } else {
+                        if (el) { el.textContent = 'Backend: versão não disponível'; el.style.color = '#94a3b8'; }
+                    }
+                } catch(e) {
+                    const el = document.getElementById('sidebar-version');
+                    if (el) { el.textContent = 'Backend: erro ao verificar'; el.style.color = '#f87171'; }
+                }
+            },
+            onerror: () => {
+                const el = document.getElementById('sidebar-version');
+                if (el) { el.textContent = 'Backend: sem conexão'; el.style.color = '#f87171'; }
+            }
+        });
     }
 
     function renderDashboard(container) {
@@ -426,7 +466,7 @@
 
         function fetchStats(force = false) {
             const refresh = document.getElementById('btn-refresh');
-            if(refresh) refresh.innerText = 'CARREGANDO...';
+            if(refresh) { refresh.disabled = true; refresh.innerText = 'CARREGANDO...'; }
             GM_xmlhttpRequest({
                 method: "POST", url: URL_APPS_SCRIPT, headers: { "Content-Type": "application/x-www-form-urlencoded" },
                 data: `action=obter_dashboard&api_target=panel&token=${TOKEN_ACESSO}&force=${force}`,
@@ -449,18 +489,21 @@
                             const elFilaEsus = document.getElementById('v-fila-esus');
                             const elDashPct = document.getElementById('dash-pct');
                             const elDashBar = document.getElementById('dash-bar');
-                            if (elV0) {
-                                elV0.innerText = totalBuscado;
-                                // Aviso quando as estatísticas dos robôs ainda não foram geradas
-                                elV0.title = (!res.dados.stats_disponivel && totalBuscado === 0)
-                                    ? "Estatísticas ainda não geradas pelos robôs, ou configurações foram resetadas."
-                                    : "";
-                            }
-                            if (elV1) elV1.innerText = cadastrosRealizados;
-                            if (elVEgAtu) elVEgAtu.innerText = calculoJaCadastrados;
-                            if (elV2) elV2.innerText = esusAtualizados;
                             const vigExibir = normalizeVigencia(res.dados.config?.vigencia || "");
                             if (elDashVig) elDashVig.innerText = vigExibir || VIG_NAO_CONFIGURADA;
+
+                            const statsZeradas = !res.dados.stats_disponivel && totalBuscado === 0;
+                            const statsMsg = statsZeradas
+                                ? "Estatísticas ainda não geradas pelos robôs, ou foram resetadas. Execute os robôs para repopular."
+                                : "";
+                            if (elV0) { elV0.innerText = totalBuscado; elV0.title = statsMsg; }
+                            if (elV1) { elV1.innerText = cadastrosRealizados; elV1.title = statsMsg; }
+                            if (elVEgAtu) { elVEgAtu.innerText = calculoJaCadastrados; elVEgAtu.title = statsMsg; }
+                            if (elV2) { elV2.innerText = esusAtualizados; elV2.title = statsMsg; }
+
+                            if (statsZeradas) {
+                                window.showToast("ℹ️ Estatísticas zeradas — execute os robôs para repopular os dados.", "info");
+                            }
 
                             if (elFilaEgestor) elFilaEgestor.innerText = res.dados.fila_egestor || 0;
                             if (elFilaEsus) elFilaEsus.innerText = res.dados.fila_esus || 0;
@@ -502,18 +545,26 @@
                             }
                         } else {
                             const elDashVig = document.getElementById('dash-vig');
-                            if (elDashVig) elDashVig.innerText = "Erro ao carregar dados do dashboard.";
+                            if (elDashVig) elDashVig.innerText = `⚠️ Erro do servidor: ${res.err || "resposta inválida"}`;
+                            ['v0','v1','v_eg_atu','v2','v-fila-egestor','v-fila-esus'].forEach(id => {
+                                const el = document.getElementById(id); if (el) el.innerText = '--';
+                            });
                             console.error("obter_dashboard error:", res);
                         }
                     } catch(e) {
+                        const elDashVig = document.getElementById('dash-vig');
+                        if (elDashVig) elDashVig.innerText = "⚠️ Erro ao interpretar resposta do servidor.";
                         console.error("Erro ao processar resposta do dashboard:", e);
                     }
-                    if(refresh) refresh.innerText = 'ATUALIZAR DADOS';
+                    if(refresh) { refresh.disabled = false; refresh.innerText = 'ATUALIZAR DADOS'; }
                 },
                 onerror: () => {
                     const elDashVig = document.getElementById('dash-vig');
-                    if (elDashVig) elDashVig.innerText = "Falha de rede ao carregar dashboard.";
-                    if(refresh) refresh.innerText = 'ATUALIZAR DADOS';
+                    if (elDashVig) elDashVig.innerText = "⚠️ Falha de rede — verifique sua conexão.";
+                    ['v0','v1','v_eg_atu','v2','v-fila-egestor','v-fila-esus'].forEach(id => {
+                        const el = document.getElementById(id); if (el) el.innerText = '--';
+                    });
+                    if(refresh) { refresh.disabled = false; refresh.innerText = 'ATUALIZAR DADOS'; }
                     console.error("Falha de rede ao chamar obter_dashboard.");
                 }
             });
@@ -611,10 +662,20 @@
                         inputs[1].value = j.data.SUL ? `https://drive.google.com/drive/folders/${j.data.SUL}` : "";
                         inputs[2].value = j.data.LESTE ? `https://drive.google.com/drive/folders/${j.data.LESTE}` : "";
                         inputs[3].value = j.data.OESTE ? `https://drive.google.com/drive/folders/${j.data.OESTE}` : "";
+                    } else if (!j.ok) {
+                        window.showToast(`⚠️ Erro ao carregar configuração: ${j.err || "resposta inválida"}`, "error");
+                        console.error("get_config error:", j);
                     }
-                } catch(e) { console.error("Erro ao carregar configuração:", e); }
+                    // j.ok && !j.data → nenhuma configuração ainda, não é erro
+                } catch(e) {
+                    window.showToast("⚠️ Erro ao interpretar configuração do servidor.", "error");
+                    console.error("Erro ao carregar configuração:", e);
+                }
             },
-            onerror: () => { console.error("Falha de rede ao carregar configuração."); }
+            onerror: () => {
+                window.showToast("⚠️ Falha de rede ao carregar configuração. Verifique sua conexão.", "error");
+                console.error("Falha de rede ao carregar configuração.");
+            }
         });
 
         document.getElementById('btn-save-cfg').onclick = function() {
@@ -623,6 +684,7 @@
                 window.showToast("Selecione uma vigência antes de salvar!", "error");
                 return;
             }
+            this.disabled = true;
             this.innerText = "SALVANDO...";
             const btn = this;
             const idN = extractId(inputs[0].value), idS = extractId(inputs[1].value), idL = extractId(inputs[2].value), idO = extractId(inputs[3].value);
@@ -633,20 +695,26 @@
                     try {
                         const r = JSON.parse(resp.responseText);
                         if (r.ok) {
-                            window.showToast("Configuração salva para toda a equipe!");
-                            CONFIG_ATUAL_SERVIDOR = { vigencia: vigSelecionada, NORTE: idN, SUL: idS, LESTE: idL, OESTE: idO };
+                            if (r.verified === false) {
+                                window.showToast("⚠️ Salvo mas não persistido! Verifique permissões do Apps Script (execute como: Eu).", "error");
+                            } else {
+                                window.showToast("✅ Configuração salva para toda a equipe!");
+                            }
+                            CONFIG_ATUAL_SERVIDOR = r.saved || { vigencia: vigSelecionada, NORTE: idN, SUL: idS, LESTE: idL, OESTE: idO };
                         } else {
-                            window.showToast("Erro ao salvar configuração. Verifique os dados e tente novamente.", "error");
+                            window.showToast(`⚠️ Erro ao salvar: ${r.err || "resposta inválida"}`, "error");
                             console.error("save_config error:", r);
                         }
                     } catch(e) {
-                        window.showToast("Erro ao salvar configuração. Tente novamente.", "error");
+                        window.showToast("⚠️ Erro ao interpretar resposta ao salvar. Tente novamente.", "error");
                         console.error("save_config parse error:", e);
                     }
+                    btn.disabled = false;
                     btn.innerText = "SALVAR PARA TODA A EQUIPE";
                 },
                 onerror: () => {
-                    window.showToast("Falha de rede ao salvar. Tente novamente.", "error");
+                    window.showToast("⚠️ Falha de rede ao salvar. Verifique sua conexão.", "error");
+                    btn.disabled = false;
                     btn.innerText = "SALVAR PARA TODA A EQUIPE";
                 }
             });
