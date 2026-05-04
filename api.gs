@@ -15,6 +15,8 @@ const SHEET_ESUS = "E-sus";
 const SHEET_MESTRE = "DADOS UNIFICADOS";
 const COND_AUDIT_RETURN_LIMIT = 20;
 const COND_AUDIT_STORE_LIMIT = 100;
+const API_VERSION = "9.2.0";
+const ZONAS = ["NORTE", "SUL", "LESTE", "OESTE"];
 
 function doGet(e) { return handleRequest(e); }
 function doPost(e) { return handleRequest(e); }
@@ -89,6 +91,29 @@ function apiPanel(params) {
 
     if (action === "health_check") {
       return jsonOut({ ok: true, data: runHealthCheck() });
+    }
+
+    if (action === "health") {
+      const props = PropertiesService.getScriptProperties();
+      let cfgInfo = { presente: false, vigencia: null };
+      try {
+        const cfgRaw = props.getProperty("VIGENCIA_CONFIG");
+        const cfg = cfgRaw ? JSON.parse(cfgRaw) : null;
+        if (cfg) {
+          cfgInfo = {
+            presente: true,
+            vigencia: normalizeVigencia_(cfg.vigencia || ""),
+            zonas_configuradas: ZONAS.filter(z => !!(cfg[z] && cfg[z].trim()))
+          };
+        }
+      } catch(eH) {}
+      return jsonOut({
+        ok: true,
+        versao: API_VERSION,
+        script_id: ScriptApp.getScriptId(),
+        ts: new Date().toISOString(),
+        vigencia_config: cfgInfo
+      });
     }
 
     if (action === "get_rules") {
@@ -251,7 +276,8 @@ function getDashboardStats() {
     concluidos_db: parseInt(props.getProperty('CACHE_CONCLUIDOS_DB') || "0"),
     historico: JSON.parse(props.getProperty('STATS_HISTORICO') || "{}"),
     config: cfg,
-    stats_disponivel: statsDisponivel
+    stats_disponivel: statsDisponivel,
+    stats_message: statsDisponivel ? null : "Estatísticas ainda não geradas pelos robôs ou foram resetadas. Execute os robôs para popular os contadores."
   };
 }
 
