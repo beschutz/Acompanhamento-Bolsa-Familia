@@ -1,10 +1,15 @@
 /**
- * 🤖 API CENTRALIZADA V9.0 (Integração Robôs e Painel Web - Vigência 1/2026)
+ * 🤖 API CENTRALIZADA V9.3 (Integração Robôs e Painel Web - Vigência 1/2026)
  * Responsável por:
  * 1. Receber chamadas do Painel Web (Sincronizar, Distribuir, Devolver)
  * 2. Fornecer dados para os Robôs Tampermonkey (E-gestor e E-SUS)
  * 3. Receber resultados dos Robôs
  */
+
+// Versão do backend — atualizar sempre que fizer um novo deploy via "Gerenciar implantações".
+// O painel usa esse valor para verificar se o deploy corresponde ao código esperado.
+const APP_VERSION = "9.3";
+const APP_BUILD   = "2026-05-04";
 
 const TOKEN_SECRET = "18032003";
 const ID_FILA_ROBOS_API = "1_OMVpaC7T8cVPQJ7eLhPmwdcNvI6CKeueLdU52ccVOQ";
@@ -76,7 +81,10 @@ function apiPanel(params) {
         OESTE: extractId(params.folder_oeste) 
       };
       props.setProperty('VIGENCIA_CONFIG', JSON.stringify(config));
-      return jsonOut({ ok: true, msg: "Configuração guardada com sucesso!" });
+      // Lê de volta imediatamente para confirmar que a propriedade foi persistida
+      const savedRaw = props.getProperty('VIGENCIA_CONFIG');
+      const verified = !!savedRaw && parseJsonSafe_(savedRaw, null) !== null;
+      return jsonOut({ ok: true, msg: "Configuração guardada com sucesso!", verified: verified, saved: config });
     }
     
     if (action === "get_config") {
@@ -193,6 +201,18 @@ function apiPanel(params) {
         ? limparPropertiesEmergencia(manterStats)
         : null;
       return jsonOut({ ok: true, data: resultado });
+    }
+
+    if (action === "get_version") {
+      return jsonOut({
+        ok: true,
+        data: {
+          version: APP_VERSION,
+          build: APP_BUILD,
+          api: "Painel Mestre API V9",
+          ts: new Date().toISOString()
+        }
+      });
     }
 
     return jsonOut({ ok: false, err: "Ação desconhecida pelo Painel." });
