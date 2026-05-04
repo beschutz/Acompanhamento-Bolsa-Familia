@@ -334,7 +334,12 @@
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
             toast.className = `text-white px-6 py-3 rounded-2xl shadow-2xl font-bold text-sm animate-fade`;
-            toast.style.cssText = 'background:linear-gradient(135deg,#6366f1,#818cf8);box-shadow:0 8px 32px rgba(99,102,241,0.4);';
+            const styles = {
+                error:   'background:linear-gradient(135deg,#dc2626,#ef4444);box-shadow:0 8px 32px rgba(220,38,38,0.45);',
+                success: 'background:linear-gradient(135deg,#059669,#10b981);box-shadow:0 8px 32px rgba(16,185,129,0.45);',
+                info:    'background:linear-gradient(135deg,#6366f1,#818cf8);box-shadow:0 8px 32px rgba(99,102,241,0.4);',
+            };
+            toast.style.cssText = styles[type] || styles.info;
             toast.innerText = msg;
             container.appendChild(toast);
             setTimeout(() => toast.remove(), 4000);
@@ -421,16 +426,22 @@
                     </div>
                     <canvas id="dashboardChart" style="height:220px;"></canvas>
                 </div>
+                <div id="stats-warning" style="display:none;padding:12px 18px;border-radius:12px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;font-size:11px;font-weight:700;margin-top:4px;">
+                    <span class="material-symbols-rounded" style="font-size:15px;vertical-align:middle;margin-right:6px;">warning</span>
+                    <span id="stats-warning-msg">Estatísticas dos robôs ainda não foram geradas ou foram resetadas. Os contadores mostram 0.</span>
+                </div>
             </div>
         `;
 
         function fetchStats(force = false) {
             const refresh = document.getElementById('btn-refresh');
             if(refresh) refresh.innerText = 'CARREGANDO...';
+            const restoreRefreshBtn = () => { if(refresh) refresh.innerText = 'ATUALIZAR'; };
             GM_xmlhttpRequest({
                 method: "POST", url: URL_APPS_SCRIPT, headers: { "Content-Type": "application/x-www-form-urlencoded" },
                 data: `action=obter_dashboard&api_target=panel&token=${TOKEN_ACESSO}&force=${force}`,
                 onload: (response) => {
+                    console.log("[Dashboard] HTTP status:", response.status, "| Body (primeiros 300 chars):", response.responseText.slice(0, 300));
                     try {
                         const res = JSON.parse(response.responseText);
                         if(res.ok) {
@@ -449,16 +460,24 @@
                             const elFilaEsus = document.getElementById('v-fila-esus');
                             const elDashPct = document.getElementById('dash-pct');
                             const elDashBar = document.getElementById('dash-bar');
-                            if (elV0) {
-                                elV0.innerText = totalBuscado;
-                                // Aviso quando as estatísticas dos robôs ainda não foram geradas
-                                elV0.title = (!res.dados.stats_disponivel && totalBuscado === 0)
-                                    ? "Estatísticas ainda não geradas pelos robôs, ou configurações foram resetadas."
-                                    : "";
-                            }
+                            const elStatsWarn = document.getElementById('stats-warning');
+                            const elStatsWarnMsg = document.getElementById('stats-warning-msg');
+
+                            if (elV0) elV0.innerText = totalBuscado;
                             if (elV1) elV1.innerText = cadastrosRealizados;
                             if (elVEgAtu) elVEgAtu.innerText = calculoJaCadastrados;
                             if (elV2) elV2.innerText = esusAtualizados;
+
+                            // Aviso visível quando estatísticas ainda não foram geradas pelos robôs
+                            if (elStatsWarn) {
+                                const statsIndisponivel = !res.dados.stats_disponivel && totalBuscado === 0;
+                                elStatsWarn.style.display = statsIndisponivel ? 'block' : 'none';
+                                if (elStatsWarnMsg && statsIndisponivel) {
+                                    elStatsWarnMsg.textContent = res.dados.stats_message ||
+                                        "Estatísticas dos robôs ainda não foram geradas ou foram resetadas. Os contadores mostram 0.";
+                                }
+                            }
+
                             const vigExibir = normalizeVigencia(res.dados.config?.vigencia || "");
                             if (elDashVig) elDashVig.innerText = vigExibir || VIG_NAO_CONFIGURADA;
 
@@ -502,18 +521,32 @@
                             }
                         } else {
                             const elDashVig = document.getElementById('dash-vig');
-                            if (elDashVig) elDashVig.innerText = "Erro ao carregar dados do dashboard.";
+                            if (elDashVig) elDashVig.innerText = `Erro ao carregar: ${res.err || 'resposta inválida'}`;
+                            const elStatsWarn = document.getElementById('stats-warning');
+                            const elStatsWarnMsg = document.getElementById('stats-warning-msg');
+                            if (elStatsWarn) elStatsWarn.style.display = 'block';
+                            if (elStatsWarnMsg) elStatsWarnMsg.textContent = `Falha ao carregar dados do servidor: ${res.err || 'ok:false'}`;
                             console.error("obter_dashboard error:", res);
                         }
                     } catch(e) {
-                        console.error("Erro ao processar resposta do dashboard:", e);
+                        const elDashVig = document.getElementById('dash-vig');
+                        if (elDashVig) elDashVig.innerText = "Erro ao interpretar resposta do servidor.";
+                        const elStatsWarn = document.getElementById('stats-warning');
+                        const elStatsWarnMsg = document.getElementById('stats-warning-msg');
+                        if (elStatsWarn) elStatsWarn.style.display = 'block';
+                        if (elStatsWarnMsg) elStatsWarnMsg.textContent = "Resposta inesperada do servidor (não é JSON). Verifique o deploy do Apps Script.";
+                        console.error("Erro ao processar resposta do dashboard:", e, "| Resposta raw:", response.responseText.slice(0, 500));
                     }
-                    if(refresh) refresh.innerText = 'ATUALIZAR DADOS';
+                    restoreRefreshBtn();
                 },
                 onerror: () => {
                     const elDashVig = document.getElementById('dash-vig');
                     if (elDashVig) elDashVig.innerText = "Falha de rede ao carregar dashboard.";
-                    if(refresh) refresh.innerText = 'ATUALIZAR DADOS';
+                    const elStatsWarn = document.getElementById('stats-warning');
+                    const elStatsWarnMsg = document.getElementById('stats-warning-msg');
+                    if (elStatsWarn) elStatsWarn.style.display = 'block';
+                    if (elStatsWarnMsg) elStatsWarnMsg.textContent = "Sem conexão com o servidor. Verifique a URL do Apps Script e as permissões do Tampermonkey.";
+                    restoreRefreshBtn();
                     console.error("Falha de rede ao chamar obter_dashboard.");
                 }
             });
@@ -593,6 +626,7 @@
             method: "POST", url: URL_APPS_SCRIPT, headers: { "Content-Type": "application/x-www-form-urlencoded" },
             data: `action=get_config&api_target=panel&token=${TOKEN_ACESSO}`,
             onload: (res) => {
+                console.log("[get_config] HTTP status:", res.status, "| Body (primeiros 300 chars):", res.responseText.slice(0, 300));
                 try {
                     const j = JSON.parse(res.responseText);
                     if(j.ok && j.data) {
@@ -611,10 +645,22 @@
                         inputs[1].value = j.data.SUL ? `https://drive.google.com/drive/folders/${j.data.SUL}` : "";
                         inputs[2].value = j.data.LESTE ? `https://drive.google.com/drive/folders/${j.data.LESTE}` : "";
                         inputs[3].value = j.data.OESTE ? `https://drive.google.com/drive/folders/${j.data.OESTE}` : "";
+                        console.log("[get_config] Configuração carregada:", { vigencia: vigNorm, NORTE: j.data.NORTE, SUL: j.data.SUL, LESTE: j.data.LESTE, OESTE: j.data.OESTE });
+                    } else if (j.ok && !j.data) {
+                        console.warn("[get_config] Servidor OK mas VIGENCIA_CONFIG está vazia (sem configuração salva).");
+                    } else {
+                        console.error("[get_config] Servidor retornou erro:", j);
+                        window.showToast("Erro ao carregar configuração do servidor: " + (j.err || "resposta inválida"), "error");
                     }
-                } catch(e) { console.error("Erro ao carregar configuração:", e); }
+                } catch(e) {
+                    console.error("[get_config] Erro ao interpretar resposta:", e, "| Raw:", res.responseText.slice(0, 500));
+                    window.showToast("Resposta inesperada do servidor ao carregar configuração. Verifique o deploy do Apps Script.", "error");
+                }
             },
-            onerror: () => { console.error("Falha de rede ao carregar configuração."); }
+            onerror: () => {
+                console.error("[get_config] Falha de rede ao carregar configuração.");
+                window.showToast("Falha de rede ao carregar configuração.", "error");
+            }
         });
 
         document.getElementById('btn-save-cfg').onclick = function() {
@@ -627,25 +673,30 @@
             const btn = this;
             const idN = extractId(inputs[0].value), idS = extractId(inputs[1].value), idL = extractId(inputs[2].value), idO = extractId(inputs[3].value);
             const d = `action=save_config&api_target=panel&token=${TOKEN_ACESSO}&vigencia_nome=${encodeURIComponent(vigSelecionada)}&folder_norte=${encodeURIComponent(idN)}&folder_sul=${encodeURIComponent(idS)}&folder_leste=${encodeURIComponent(idL)}&folder_oeste=${encodeURIComponent(idO)}`;
+            console.log("[save_config] Enviando:", { vigencia: vigSelecionada, NORTE: idN, SUL: idS, LESTE: idL, OESTE: idO });
             GM_xmlhttpRequest({
                 method: "POST", url: URL_APPS_SCRIPT, headers: { "Content-Type": "application/x-www-form-urlencoded" }, data: d,
                 onload: (resp) => {
+                    console.log("[save_config] HTTP status:", resp.status, "| Body (primeiros 300 chars):", resp.responseText.slice(0, 300));
                     try {
                         const r = JSON.parse(resp.responseText);
                         if (r.ok) {
-                            window.showToast("Configuração salva para toda a equipe!");
+                            console.log("[save_config] Sucesso:", r.msg || "ok:true");
+                            window.showToast("Configuração salva para toda a equipe!", "success");
                             CONFIG_ATUAL_SERVIDOR = { vigencia: vigSelecionada, NORTE: idN, SUL: idS, LESTE: idL, OESTE: idO };
                         } else {
-                            window.showToast("Erro ao salvar configuração. Verifique os dados e tente novamente.", "error");
-                            console.error("save_config error:", r);
+                            const errMsg = r.err || r.msg || "Erro desconhecido";
+                            console.error("[save_config] Servidor retornou erro:", r);
+                            window.showToast("Erro ao salvar: " + errMsg, "error");
                         }
                     } catch(e) {
-                        window.showToast("Erro ao salvar configuração. Tente novamente.", "error");
-                        console.error("save_config parse error:", e);
+                        console.error("[save_config] Erro ao interpretar resposta:", e, "| Raw:", resp.responseText.slice(0, 500));
+                        window.showToast("Resposta inesperada do servidor ao salvar. Verifique o deploy do Apps Script.", "error");
                     }
                     btn.innerText = "SALVAR PARA TODA A EQUIPE";
                 },
                 onerror: () => {
+                    console.error("[save_config] Falha de rede.");
                     window.showToast("Falha de rede ao salvar. Tente novamente.", "error");
                     btn.innerText = "SALVAR PARA TODA A EQUIPE";
                 }
