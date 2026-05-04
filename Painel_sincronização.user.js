@@ -45,6 +45,9 @@
     const VIGENCIAS_STORAGE_KEY = 'vigencias_list';
     const VIGENCIA_FORMAT = /^\d{4}\/[12]$/;
     const VIG_NAO_CONFIGURADA = "NÃO CONFIGURADA";
+    const TOAST_DURATION_MS = 5000;
+    const BTN_SAVE_CFG_LABEL = "SALVAR PARA TODA A EQUIPE";
+    const DASHBOARD_METRIC_IDS = ['v0','v1','v_eg_atu','v2','v-fila-egestor','v-fila-esus'];
 
     function getVigenciasList() {
         try {
@@ -343,7 +346,7 @@
             toast.style.cssText = styles[type] || styles.info;
             toast.innerText = msg;
             container.appendChild(toast);
-            setTimeout(() => toast.remove(), 5000);
+            setTimeout(() => toast.remove(), TOAST_DURATION_MS);
         };
     }
 
@@ -549,7 +552,7 @@
                 onerror: () => {
                     const elDashVig = document.getElementById('dash-vig');
                     if (elDashVig) elDashVig.innerText = "Falha de rede — verifique a conexão.";
-                    ['v0','v1','v_eg_atu','v2','v-fila-egestor','v-fila-esus'].forEach(id => {
+                    DASHBOARD_METRIC_IDS.forEach(id => {
                         const el = document.getElementById(id);
                         if (el) el.innerText = '—';
                     });
@@ -746,13 +749,13 @@
                                         setStatus('ok', `Salvo ✓ • Vigência: ${vigSelecionada} (verificação falhou, mas save confirmado)`);
                                         window.showToast(r.msg || "Configuração salva para toda a equipe!", "success");
                                     }
-                                    btn.innerText = "SALVAR PARA TODA A EQUIPE";
+                                    btn.innerText = BTN_SAVE_CFG_LABEL;
                                     btn.disabled = false;
                                 },
                                 onerror: () => {
                                     setStatus('ok', `Salvo ✓ • Vigência: ${vigSelecionada} (verificação offline)`);
                                     window.showToast(r.msg || "Configuração salva para toda a equipe!", "success");
-                                    btn.innerText = "SALVAR PARA TODA A EQUIPE";
+                                    btn.innerText = BTN_SAVE_CFG_LABEL;
                                     btn.disabled = false;
                                 }
                             });
@@ -767,13 +770,13 @@
                         setStatus('error', 'Erro ao processar resposta do servidor ao salvar.');
                         console.error("save_config parse error:", e);
                     }
-                    btn.innerText = "SALVAR PARA TODA A EQUIPE";
+                    btn.innerText = BTN_SAVE_CFG_LABEL;
                     btn.disabled = false;
                 },
                 onerror: () => {
                     window.showToast("Falha de rede ao salvar. Tente novamente.", "error");
                     setStatus('error', 'Falha de rede ao tentar salvar a configuração.');
-                    btn.innerText = "SALVAR PARA TODA A EQUIPE";
+                    btn.innerText = BTN_SAVE_CFG_LABEL;
                     btn.disabled = false;
                 }
             });
